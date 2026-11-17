@@ -1,0 +1,40 @@
+paqet-panel - third-party notices
+=================================
+
+Some of the work in this project comes from other projects.
+
+PasarGuard Panel
+----------------
+Project: https://github.com/PasarGuard/panel
+Copyright (C) 2025 PasarGuard organization
+License: GNU Affero General Public License v3.0
+
+UI pieces (buttons, dialogs, layout patterns, theme values, and the
+Inter and Vazirmatn font files as bundled by that project) were adapted
+from PasarGuard Panel, with permission from the PasarGuard authors.
+
+PasarGuard itself includes code derived from shadcn/ui (MIT), Radix UI
+(MIT) and lucide (ISC).
+
+Caddy
+-----
+This release bundles a Caddy build as paqet-caddy, used as paqet-proxy.
+
+Project: https://github.com/caddyserver/caddy
+License: Apache License 2.0
+Copyright of Caddy: The Caddy Authors
+
+The build also includes the Cloudflare DNS module for Caddy
+(Apache License 2.0).
+
+Fonts
+-----
+Inter and Vazirmatn are licensed under the SIL Open Font License 1.1.
+
+Other Go libraries
+------------------
+The panel, node agent and Caddy programs are statically linked and
+include various Go modules, each under its own license (commonly BSD,
+MIT or Apache-2.0). Build information is embedded in each program
+(`go version -m paqet-panel-linux-amd64`, and the same for the other
+two programs).
