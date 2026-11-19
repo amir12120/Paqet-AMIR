@@ -269,7 +269,15 @@ jobs:
             echo "::error::an offline install must not write updates.panel_repo"
             exit 1
           fi
-          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:8480/ || true)
+          # The unit is up before its HTTP listener is: poll, like a person would.
+          code=""
+          for _ in $(seq 1 30); do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:8480/ || true)
+            case $code in
+              200 | 302 | 303 | 401) break ;;
+            esac
+            sleep 2
+          done
           echo "offline panel answered with HTTP $code"
           case $code in
             200 | 302 | 303 | 401) ;;
