@@ -145,6 +145,22 @@ jobs:
           grep -q -- '--mirror' README.md
           grep -q 'A preflight check failed' README.md
 
+      - name: Published installer matches this commit
+        # The one-liner downloads a release asset, not this file, so a stale
+        # asset silently ships an old installer. Skipped on pull requests,
+        # where the release is still main's.
+        if: github.event_name != 'pull_request'
+        run: |
+          set -euo pipefail
+          url="https://github.com/$GITHUB_REPOSITORY/releases/latest/download/install.sh"
+          curl -fsSL --retry 3 --max-time 60 "$url" -o /tmp/published-install.sh
+          if ! cmp -s install.sh /tmp/published-install.sh; then
+            echo "::error::the release asset differs from install.sh; re-upload it"
+            diff -u install.sh /tmp/published-install.sh | head -40 || true
+            exit 1
+          fi
+          echo "the published one-liner serves this exact installer"
+
   installer-e2e:
     name: Install, verify and uninstall on a fresh Ubuntu
     runs-on: ubuntu-22.04
