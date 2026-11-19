@@ -1,0 +1,85 @@
+# Cleanup Caches
+#
+# This repository publishes no build artifacts, but Actions keeps caches and
+# artifacts from the smoke tests (and from any dependency cache a future job
+# adds). Nothing here is needed after a run, so this job can purge it on
+# demand, and weekly as a safety net.
+#
+# Run it from Actions -> Cleanup Caches -> Run workflow. older_than_days=0
+# deletes everything; a number keeps the recent caches.
+
+name: Cleanup Caches
+
+on:
+  workflow_dispatch:
+    inputs:
+      older_than_days:
+        description: "Only delete caches older than N days (0 = delete all)"
+        required: false
+        default: "0"
+  schedule:
+    # Weekly safety net: Sundays 03:00 UTC.
+    - cron: "0 3 * * 0"
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  purge:
+    name: Purge Actions caches and artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Delete GitHub Actions caches
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          DAYS="${{ github.event.inputs.older_than_days || '0' }}"
+          REPO="$GITHUB_REPOSITORY"
+
+          before=$(gh api "/repos/$REPO/actions/caches" --jq '.total_count')
+          echo "Caches before: $before (older_than_days=$DAYS)"
+
+          if [ "$DAYS" = "0" ]; then
+            gh api -X DELETE "/repos/$REPO/actions/caches" >/dev/null 2>&1 || true
+          else
+            cutoff=$(date -u -d "$DAYS days ago" +%Y-%m-%dT%H:%M:%SZ)
+            gh api "/repos/$REPO/actions/caches?per_page=100" \
+              --jq ".actions_caches[] | select(.last_accessed_at < \"$cutoff\") | .id" |
+              while read -r id; do
+                [ -n "$id" ] && gh api -X DELETE "/repos/$REPO/actions/caches/$id" >/dev/null 2>&1 || true
+              done
+          fi
+
+          after=$(gh api "/repos/$REPO/actions/caches" --jq '.total_count')
+          echo "Caches after: $after"
+          echo "caches_after=$after" >>"$GITHUB_ENV"
+
+      - name: Delete workflow artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          REPO="$GITHUB_REPOSITORY"
+          gh api "/repos/$REPO/actions/artifacts?per_page=100" --jq '.artifacts[].id' |
+            while read -r id; do
+              [ -n "$id" ] && gh api -X DELETE "/repos/$REPO/actions/artifacts/$id" >/dev/null 2>&1 || true
+            done
+          left=$(gh api "/repos/$REPO/actions/artifacts" --jq '.total_count')
+          echo "Artifacts remaining: $left"
+          echo "artifacts_after=$left" >>"$GITHUB_ENV"
+
+      - name: Summary
+        run: |
+          {
+            echo "### 🧹 Cleanup Caches"
+            echo ""
+            echo "- Repo: \`$GITHUB_REPOSITORY\`"
+            echo "- Caches remaining: **${caches_after:-?}**"
+            echo "- Artifacts remaining: **${artifacts_after:-?}**"
+            echo ""
+            echo "Releases and their assets are never touched by this job;"
+            echo "the published installer stays downloadable."
+          } >>"$GITHUB_STEP_SUMMARY"

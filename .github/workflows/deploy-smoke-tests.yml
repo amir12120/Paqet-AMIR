@@ -1,0 +1,210 @@
+# Deploy Smoke Tests
+#
+# What this catches, in order of cost:
+#   1) static-and-unit - syntax, shellcheck errors, the preflight order, the
+#      helper functions (fetch/fallback/mirror/panel repo) and the README's
+#      one-liners. No install, about a minute.
+#   2) installer-e2e - a real non-interactive install on a fresh Ubuntu runner:
+#      prerequisites, release download (with the upstream fallback), the
+#      generated unit, an HTTP answer on the listen address, and the release's
+#      own uninstall.sh. This is the only level that proves a server can
+#      actually be installed, which is what the preflight bugs broke.
+
+name: Deploy Smoke Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  static-and-unit:
+    name: Static checks and installer unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Shell syntax
+        run: bash -n install.sh
+
+      - name: ShellCheck (errors fail, warnings are listed)
+        run: |
+          set +e
+          shellcheck -S error install.sh
+          rc=$?
+          echo "--- warnings (informational) ---"
+          shellcheck -S warning -f gcc install.sh | head -80
+          exit "$rc"
+
+      - name: Installer layout (preflight order, flags, repository)
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          awk '/^wizard_preflight\(\)/,/^}/' install.sh > "$tmp/preflight"
+          prereq="$(grep -n 'check_prereqs' "$tmp/preflight" | head -1 | cut -d: -f1)"
+          net="$(grep -n 'network_check' "$tmp/preflight" | head -1 | cut -d: -f1)"
+          test -n "$prereq" && test -n "$net"
+          echo "prerequisites at line $prereq, network check at line $net"
+          # The old order turned a missing ca-certificates into a GitHub error
+          # and asked "A preflight check failed. Continue anyway?".
+          if [ "$prereq" -gt "$net" ]; then
+            echo "::error::wizard_preflight checks the network before installing prerequisites"
+            exit 1
+          fi
+          bash install.sh --help > "$tmp/help"
+          grep -q -- '--mirror URL' "$tmp/help"
+          grep -q 'amir12120/Paqet-AMIR' "$tmp/help"
+          grep -q -- '--from DIR' "$tmp/help"
+
+      - name: Helper unit tests (download, mirror, release repo)
+        run: |
+          set -euo pipefail
+          export INSTALL_SH_LIB=1
+          # shellcheck source=/dev/null
+          . ./install.sh
+          fail() { echo "::error::$*"; exit 1; }
+          tmp="$(mktemp -d)"
+
+          # a missing file must fail and must not leave a partial download
+          if fetch_url "https://api.github.com/repos/$DEFAULT_REPO/releases/tags/v0.0.0-missing" "$tmp/missing.json" 2>/dev/null; then
+            fail "fetch_url reported success for a 404"
+          fi
+          test ! -e "$tmp/missing.json"
+
+          # a real file downloads
+          fetch_url "https://api.github.com/repos/$DEFAULT_REPO/releases/latest" "$tmp/release.json"
+          test -s "$tmp/release.json"
+
+          # --mirror must be https, and its trailing slash is removed
+          if ( MIRROR="http://plain.example"; validate_mirror ) >/dev/null 2>&1; then
+            fail "validate_mirror accepted a plain-http mirror"
+          fi
+          MIRROR="https://ghfast.top/"
+          validate_mirror
+          test "$MIRROR" = "https://ghfast.top"
+
+          # asset URLs: pinned tag vs latest
+          mkdir -p "$tmp/tagged" "$tmp/untagged"
+          printf 'v9.9.9\n' > "$tmp/tagged/TAG"
+          test "$(release_asset_base someone/repo "$tmp/tagged")" = "https://github.com/someone/repo/releases/download/v9.9.9"
+          test "$(release_asset_base someone/repo "$tmp/untagged")" = "https://github.com/someone/repo/releases/latest/download"
+
+          # updates.panel_repo follows the repository the files came from
+          mkdir -p "$tmp/from-upstream"
+          printf 'behzadea12/Paqet-Panel\n' > "$tmp/from-upstream/REPO"
+          test "$(release_repo_for "$tmp/from-upstream")" = "behzadea12/Paqet-Panel"
+          mkdir -p "$tmp/from-dir"
+          test "$(release_repo_for "$tmp/from-dir")" = "$DEFAULT_REPO"
+
+      - name: Release fetch (with the API, and with the API blocked)
+        run: |
+          set -euo pipefail
+          export INSTALL_SH_LIB=1
+          # shellcheck source=/dev/null
+          . ./install.sh
+          TMP="$(mktemp -d)"
+          # the 20 MB archive is not needed to prove where SHA256SUMS comes from
+          maybe_unpack_arch_tarball() { :; }
+
+          dir="$(fetch_release "$DEFAULT_REPO")"
+          test -s "$dir/SHA256SUMS"
+          test -f "$dir/REPO"
+          echo "with the API: $dir came from $(cat "$dir/REPO")"
+
+          # The Iranian case: api.github.com blocked, github.com still answers.
+          API_DISABLED=1
+          dir2="$(fetch_release "$DEFAULT_REPO")"
+          test -s "$dir2/SHA256SUMS"
+          echo "without the API: $dir2 came from $(cat "$dir2/REPO")"
+
+      - name: README matches the installer
+        run: |
+          set -euo pipefail
+          repo="$(sed -n 's/^DEFAULT_REPO="\([^"]*\)".*/\1/p' install.sh | head -1)"
+          echo "DEFAULT_REPO=$repo"
+          test -n "$repo"
+          if grep -n 'releases/latest/download/install.sh' README.md | grep -v "$repo"; then
+            echo "::error::a README one-liner points at another repository"
+            exit 1
+          fi
+          if grep -q 'raw.githubusercontent.com' README.md; then
+            echo "::error::README uses raw.githubusercontent.com, which is blocked on some networks"
+            exit 1
+          fi
+          grep -q -- '--mirror' README.md
+          grep -q 'A preflight check failed' README.md
+
+  installer-e2e:
+    name: Install, verify and uninstall on a fresh Ubuntu
+    runs-on: ubuntu-22.04
+    needs: static-and-unit
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install the panel (non-interactive, as a server would)
+        run: |
+          set -o pipefail
+          sudo bash install.sh panel --listen 127.0.0.1:8480 --yes 2>&1 | tee /tmp/install.log
+
+      - name: The service, files and HTTP answer are real
+        run: |
+          set -euo pipefail
+          systemctl is-active --quiet paqet-panel
+          test -x /opt/paqet-panel/bin/paqet-panel
+          test -f /etc/paqet-panel/panel.yaml
+          echo "panel_repo: $(grep -E 'panel_repo:' /etc/paqet-panel/panel.yaml || echo '(none)')"
+
+          code=""
+          for _ in $(seq 1 30); do
+            code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:8480/ || true)"
+            case "$code" in
+              200 | 302 | 303 | 401) break ;;
+            esac
+            sleep 2
+          done
+          echo "panel answered with HTTP $code"
+          case "$code" in
+            200 | 302 | 303 | 401) ;;
+            *)
+              echo "::error::the panel did not answer on 127.0.0.1:8480 (HTTP $code)"
+              exit 1
+              ;;
+          esac
+
+      - name: Uninstall through the release's uninstall.sh
+        run: |
+          set -o pipefail
+          sudo bash install.sh uninstall panel --yes 2>&1 | tee /tmp/uninstall.log
+          for _ in $(seq 1 10); do
+            if ! systemctl is-active --quiet paqet-panel; then
+              break
+            fi
+            sleep 2
+          done
+          if systemctl is-active --quiet paqet-panel; then
+            echo "::error::paqet-panel is still running after uninstall"
+            exit 1
+          fi
+
+      - name: Diagnostics
+        if: failure()
+        run: |
+          sudo systemctl status paqet-panel --no-pager -l || true
+          sudo journalctl -u paqet-panel -n 80 --no-pager || true
+          echo "--- install log ---"
+          tail -80 /tmp/install.log 2>/dev/null || true
+          echo "--- panel.yaml ---"
+          sudo cat /etc/paqet-panel/panel.yaml 2>/dev/null || true

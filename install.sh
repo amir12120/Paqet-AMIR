@@ -1449,6 +1449,19 @@ fetch_release_from() {
   return 0
 }
 
+# release_repo_for DIR: the repository whose release is unpacked in DIR (its
+# REPO file), falling back to --repo / DEFAULT_REPO for a --from directory. The
+# panel writes this to updates.panel_repo, so its Updates page looks at a
+# release that really carries the panel, never at an installer-only one.
+release_repo_for() {
+  local dir=$1 repo=${REPO:-$DEFAULT_REPO}
+  if [ -f "$dir/REPO" ]; then
+    repo=$(head -n 1 "$dir/REPO")
+  fi
+  printf '%s
+' "$repo"
+}
+
 # fetch_release REPO: download (or copy from --from) the release's
 # SHA256SUMS (+ signature) into $TMP/<repo-dir> and echo that dir. A
 # repository with no release of its own falls back to FALLBACK_REPO.
@@ -3205,12 +3218,10 @@ install_panel() {
       tlsconf=$(printf '%s\n    challenge: http-01\n    http_listen: ":80"\n' "$tlsconf")
     fi
   fi
-  # The panel's Updates page reads updates.panel_repo, so it must name
-  # the repository the release files really came from. Until this
-  # repository publishes a full release, that is the upstream project,
-  # and the page never looks at the installer-only release published here.
-  local repo_used=${REPO:-$DEFAULT_REPO}
-  [ ! -f "$dir/REPO" ] || repo_used=$(head -n 1 "$dir/REPO")
+  # The panel's Updates page reads updates.panel_repo, so it must name the
+  # repository the release files really came from (see release_repo_for).
+  local repo_used
+  repo_used=$(release_repo_for "$dir")
   local fresh=0
   [ -f "$etc/panel.yaml" ] || fresh=1
   if [ "$fresh" = 1 ]; then
