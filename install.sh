@@ -1701,6 +1701,19 @@ start_or_restart() {
   else
     run systemctl enable --now "$svc"
   fi
+  # enable --now returns before the unit is up, so "installed" used to be
+  # printed while the service was still activating, and a crash-looping unit
+  # looked installed. Wait for it, then say plainly when it did not come up.
+  if [ "$DRY_RUN" != 1 ]; then
+    local i
+    for i in $(seq 1 20); do
+      systemctl is-active --quiet "$svc" && return 0
+      sleep 0.5
+    done
+    warn "$svc did not become active within 10s"
+    systemctl status "$svc" --no-pager -l 2>/dev/null | tail -15 || true
+    warn "check its log: journalctl -u $svc -n 50 --no-pager"
+  fi
 }
 
 install_core() {

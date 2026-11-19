@@ -162,7 +162,20 @@ jobs:
       - name: The service, files and HTTP answer are real
         run: |
           set -euo pipefail
-          systemctl is-active --quiet paqet-panel
+          # The installer now waits for the unit, so it must already be up; the
+          # short poll only absorbs runner scheduling noise.
+          for _ in $(seq 1 10); do
+            systemctl is-active --quiet paqet-panel && break
+            sleep 1
+          done
+          systemctl is-active --quiet paqet-panel || {
+            echo "::error::paqet-panel is not active right after install"
+            exit 1
+          }
+          if grep -q 'did not become active' /tmp/install.log; then
+            echo "::error::the installer reported that the unit did not come up"
+            exit 1
+          fi
           test -x /opt/paqet-panel/bin/paqet-panel
           test -f /etc/paqet-panel/panel.yaml
           echo "panel_repo: $(grep -E 'panel_repo:' /etc/paqet-panel/panel.yaml || echo '(none)')"
