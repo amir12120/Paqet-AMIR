@@ -775,15 +775,16 @@ network_check() {
 # fetch_url URL DEST: download URL to DEST. The direct URL first, then the
 # mirror. 0 = DEST holds the complete file.
 fetch_url() {
-  local url=$1 dest=$2 m rc=0
+  local url=$1 dest=$2 quiet=${3:-} m rc=0
   if curl -fsSL --retry 2 --retry-delay 1 --connect-timeout 10 --max-time 600 \
     --proto '=https,http' -o "$dest" "$url" 2>/dev/null; then
     return 0
+  else
+    rc=$?
   fi
-  rc=$?
   for m in ${MIRROR:-} $MIRROR_PREFIXES; do
     [ -n "$m" ] || continue
-    say "direct download failed; retrying through ${m}"
+    [ -n "$quiet" ] || say "direct download failed; retrying through ${m}"
     if curl -fsSL --retry 1 --connect-timeout 10 --max-time 900 \
       --proto '=https,http' -o "$dest" "${m%/}/$url" 2>/dev/null; then
       MIRROR_USED=${m%/}
@@ -1414,7 +1415,7 @@ release_tag_from_web() {
 # fetch_release_from REPO DIR: fill DIR from one repository. Non-zero when
 # that repository has no usable release (network, API or missing asset).
 fetch_release_from() {
-  local repo=$1 dir=$2 url tag=""
+  local repo=$1 dir=$2 url tag="" base
   mkdir -p "$dir"
   printf '%s\n' "$repo" >"$dir/REPO"
   rm -f -- "$dir/release.json" "$dir/TAG"
@@ -1424,7 +1425,7 @@ fetch_release_from() {
     else
       url="$API/repos/$repo/releases/latest"
     fi
-    if fetch_url "$url" "$dir/release.json"; then
+    if fetch_url "$url" "$dir/release.json" quiet; then
       tag=$(sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$dir/release.json" | head -n 1)
       [ -n "$tag" ] || warn "no release tag in $url"
     else
@@ -1440,8 +1441,11 @@ fetch_release_from() {
     [ -z "$tag" ] || say "release $repo: $tag (from github.com)"
   fi
   [ -z "$tag" ] || printf '%s\n' "$tag" >"$dir/TAG"
-  download_asset "$dir" SHA256SUMS || return 1
-  download_asset "$dir" SHA256SUMS.sig optional || true
+  # The release itself is identified by its SHA256SUMS; a release without one
+  # (an installer-only release) is not usable here and the caller falls back.
+  base=$(release_asset_base "$repo" "$dir")
+  fetch_url "$base/SHA256SUMS" "$dir/SHA256SUMS" quiet || return 1
+  fetch_url "$base/SHA256SUMS.sig" "$dir/SHA256SUMS.sig" quiet || rm -f -- "$dir/SHA256SUMS.sig"
   return 0
 }
 
@@ -1457,8 +1461,8 @@ fetch_release() {
     [ ! -f "$FROM_DIR/SHA256SUMS.sig" ] || cp -- "$FROM_DIR/SHA256SUMS.sig" "$dir/"
   elif ! fetch_release_from "$repo" "$dir"; then
     if [ -n "$FALLBACK_REPO" ] && [ "$repo" = "$DEFAULT_REPO" ]; then
-      warn "no usable release in $repo; falling back to $FALLBACK_REPO"
-      say "files from $FALLBACK_REPO are checked against SHA256SUMS exactly like $repo's"
+      say "$repo has no binary release yet; the release files come from $FALLBACK_REPO"
+      say "they are checked against $FALLBACK_REPO's SHA256SUMS, exactly like a local release"
       rm -rf -- "$dir"
       fetch_release_from "$FALLBACK_REPO" "$dir" ||
         die "cannot fetch a release from $repo or $FALLBACK_REPO (use --from DIR, or --mirror https://<prefix>)"
