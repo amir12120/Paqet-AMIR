@@ -3205,6 +3205,12 @@ install_panel() {
       tlsconf=$(printf '%s\n    challenge: http-01\n    http_listen: ":80"\n' "$tlsconf")
     fi
   fi
+  # The panel's Updates page reads updates.panel_repo, so it must name
+  # the repository the release files really came from. Until this
+  # repository publishes a full release, that is the upstream project,
+  # and the page never looks at the installer-only release published here.
+  local repo_used=${REPO:-$DEFAULT_REPO}
+  [ ! -f "$dir/REPO" ] || repo_used=$(head -n 1 "$dir/REPO")
   local fresh=0
   [ -f "$etc/panel.yaml" ] || fresh=1
   if [ "$fresh" = 1 ]; then
@@ -3217,7 +3223,7 @@ install_panel() {
       printf '  gost2:\n    enabled: true\n    config_dir: %s\n    run_as: %s\n' "$GOST2_CONF" "$TUNNEL_USER"
       printf '  gost3:\n    enabled: true\n    config_dir: %s\n    run_as: %s\n' "$GOST3_CONF" "$TUNNEL_USER"
       printf 'updates:\n  api: "%s"\n' "$API"
-      [ -z "$REPO" ] || printf '  panel_repo: "%s"\n' "$REPO"
+      [ -z "$REPO" ] || printf '  panel_repo: "%s"\n' "$repo_used"
       [ -z "$CORE_REPO" ] || printf '  core_repo: "%s"\n' "$CORE_REPO"
       [ -z "$PUBKEY" ] || printf '  public_key: "%s"\n' "$PUBKEY"
       [ -z "$tlsconf" ] || printf '%s\n' "$tlsconf"
@@ -3246,13 +3252,13 @@ install_panel() {
   if [ "$fresh" = 0 ] && [ -n "$REPO" ] && ! grep -Eq '^[[:space:]]+panel_repo:' "$etc/panel.yaml"; then
     # v0.7.36: an install without updates.panel_repo (one-liner before
     # v0.7.36) gets the release repository, so the Updates page finds releases.
-    awk -v r="$REPO" '
+    awk -v r="$repo_used" '
       /^updates:/ { print; print "  panel_repo: \"" r "\""; done = 1; next }
       { print }
       END { if (!done) { print "updates:"; print "  panel_repo: \"" r "\"" } }' "$etc/panel.yaml" >"$TMP/panel.yaml"
     run cp -p "$etc/panel.yaml" "$etc/panel.yaml.bak"
     run install -m 0640 -o root -g "$SVC_USER" "$TMP/panel.yaml" "$etc/panel.yaml"
-    say "updates.panel_repo in $etc/panel.yaml: $REPO (old copy: $etc/panel.yaml.bak)"
+    say "updates.panel_repo in $etc/panel.yaml: $repo_used (old copy: $etc/panel.yaml.bak)"
   fi
   if [ "$fresh" = 1 ]; then
     :
