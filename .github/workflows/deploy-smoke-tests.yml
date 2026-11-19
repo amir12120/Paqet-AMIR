@@ -230,6 +230,69 @@ jobs:
             exit 1
           fi
 
+      - name: Offline install from a release directory (the README steps)
+        run: |
+          set -euo pipefail
+          arch=$(uname -m)
+          case $arch in
+            x86_64) arch=amd64 ;;
+            aarch64) arch=arm64 ;;
+            armv7l) arch=armv7 ;;
+            i?86) arch=386 ;;
+            riscv64) arch=riscv64 ;;
+          esac
+          tag=$(curl -fsS https://api.github.com/repos/behzadea12/Paqet-Panel/releases/latest |
+            python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')
+          echo "bundle: $tag for $arch"
+          mkdir -p /tmp/bundle && cd /tmp/bundle
+          curl -fsSLO "https://github.com/behzadea12/Paqet-Panel/releases/download/$tag/SHA256SUMS"
+          curl -fsSLO "https://github.com/behzadea12/Paqet-Panel/releases/download/$tag/paqet-release-$tag-linux-$arch.tar.xz"
+          sha256sum -c --ignore-missing SHA256SUMS
+          tar -xJf "paqet-release-$tag-linux-$arch.tar.xz"
+          dir=/tmp/bundle/paqet-release-$tag
+          test -f "$dir/SHA256SUMS"
+          test -x "$dir/paqet-panel-linux-$arch"
+          # A fresh panel.yaml: the previous uninstall kept the online one.
+          sudo rm -rf /etc/paqet-panel
+          sudo bash "$GITHUB_WORKSPACE/install.sh" panel --from "$dir" \
+            --listen 127.0.0.1:8480 --yes 2>&1 | tee /tmp/offline-install.log
+          systemctl is-active --quiet paqet-panel || {
+            echo "::error::paqet-panel is not active after the offline install"
+            exit 1
+          }
+          if grep -q 'did not become active' /tmp/offline-install.log; then
+            echo "::error::the offline install reported that the unit did not come up"
+            exit 1
+          fi
+          sudo test -x /opt/paqet-panel/bin/paqet-panel
+          if sudo grep -q 'panel_repo:' /etc/paqet-panel/panel.yaml; then
+            echo "::error::an offline install must not write updates.panel_repo"
+            exit 1
+          fi
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:8480/ || true)
+          echo "offline panel answered with HTTP $code"
+          case $code in
+            200 | 302 | 303 | 401) ;;
+            *)
+              echo "::error::the offline install did not answer (HTTP $code)"
+              exit 1
+              ;;
+          esac
+
+      - name: Offline uninstall from the same directory
+        run: |
+          set -euo pipefail
+          dir=$(ls -d /tmp/bundle/paqet-release-* | head -n 1)
+          sudo bash "$GITHUB_WORKSPACE/install.sh" uninstall panel --from "$dir" --yes
+          for _ in $(seq 1 10); do
+            systemctl is-active --quiet paqet-panel || break
+            sleep 2
+          done
+          if systemctl is-active --quiet paqet-panel; then
+            echo "::error::paqet-panel is still running after the offline uninstall"
+            exit 1
+          fi
+
       - name: Diagnostics
         if: failure()
         run: |

@@ -32,6 +32,7 @@
 - [🧩 How it fits together](#-how-it-fits-together)
 - [📸 Screenshots](#-screenshots)
 - [📦 Advanced: non-interactive install (flags)](#-advanced-non-interactive-install-flags)
+- [📥 Offline install (server without internet)](#-offline-install-server-without-internet)
 - [🚩 Installer flags](#-installer-flags)
 - [🔗 Node setup](#-node-setup)
 - [🔄 Updating](#-updating)
@@ -333,6 +334,158 @@ sudo systemctl restart paqet-panel
 
 For a built-in ACME domain on a port other than 443, port 80 must stay free (HTTP-01). For a privileged port (1–1023), prefer re-running the installer so the unit keeps `CAP_NET_BIND_SERVICE`. Moving from a certbot certificate to built-in ACME or plain HTTP also removes the installer's certbot deploy hook and `/etc/paqet-panel/tls/`.
 
+### 📥 Offline install (server without internet)
+
+`install.sh` can install with no network at all: instead of downloading the
+release files it copies them from a directory you put on the server, and still
+checks every one of them against `SHA256SUMS`, so a tampered or truncated file
+stops the install exactly like the online path.
+
+**Step 1 — build the bundle on a machine that has internet**
+
+Pick the architecture of the target server (`uname -m` there): `x86_64` →
+`amd64`, `aarch64` → `arm64`, `armv7l` → `armv7`, `i686` → `386`, `riscv64` →
+`riscv64`. Then download that architecture's release archive and its checksums.
+Use the release that actually carries the binaries (this repository's release
+carries only the installer, so the files still come from the upstream release):
+
+```bash
+ARCH=amd64              # amd64 | arm64 | armv7 | 386 | riscv64
+TAG=v0.7.44             # the release that carries the binaries
+mkdir paqet-offline && cd paqet-offline
+curl -fsSLO "https://github.com/behzadea12/Paqet-Panel/releases/download/$TAG/SHA256SUMS"
+curl -fsSLO "https://github.com/behzadea12/Paqet-Panel/releases/download/$TAG/paqet-release-$TAG-linux-$ARCH.tar.xz"
+sha256sum -c --ignore-missing SHA256SUMS
+tar -xJf "paqet-release-$TAG-linux-$ARCH.tar.xz"
+curl -fsSLo install.sh "https://github.com/amir12120/Paqet-AMIR/releases/latest/download/install.sh"
+```
+
+The archive unpacks into `paqet-release-$TAG/`, and that directory is exactly
+what `--from` wants:
+
+```text
+paqet-release-v0.7.44/
+  SHA256SUMS               the list every copied file is checked against
+  paqet-panel-linux-amd64  the panel
+  paqet-node-linux-amd64   the node agent
+  paqet-caddy-linux-amd64  the built-in proxy (optional)
+  update-guard.sh          pre-start guard for both services
+  uninstall.sh             needed for an offline uninstall
+  install.sh, CHANGELOG.md not used, but harmless
+```
+
+`install.sh` next to that directory is the current installer from this
+repository (the one inside the archive is the older v0.7.44 copy); both work,
+the current one is what the rest of this page documents.
+
+**Step 2 — copy the bundle to the server**
+
+```bash
+scp -r paqet-offline root@203.0.113.10:/root/
+```
+
+or, over a USB stick: `tar -cJf paqet-offline.tar.xz paqet-offline`, copy that
+one file, `tar -xJf` it on the server.
+
+**Step 3 — put the prerequisites on the server first**
+
+With `--from` the installer downloads nothing, so `curl`, `xz` and
+`ca-certificates` are no longer needed. It still needs these, and on a server
+with no network its "install the missing packages now?" prompt cannot succeed:
+
+```bash
+# Debian/Ubuntu, from a local mirror, install media or an apt-cacher
+apt-get install -y --no-install-recommends tar coreutils diffutils libpcap0.8
+# Ubuntu 24.04 and newer call the same package libpcap0.8t64
+# optional: polkitd — without it the installer asks to run the service as root
+```
+
+Check first, so a missing tool does not stop you halfway:
+
+```bash
+command -v tar sha256sum install cmp
+ldconfig -p | grep libpcap
+```
+
+`libpcap.so.0.8` (or `libpcap.so.1`) is what the paqet core links against; it is
+the one that fails late if it is missing.
+
+**Step 4 — run the install**
+
+```bash
+cd /root/paqet-offline
+sudo bash install.sh panel --from /root/paqet-offline/paqet-release-v0.7.44 \
+  --listen 127.0.0.1:8480 --yes
+```
+
+- `--from DIR` reads every file from `DIR` (a full path, not `~`) and copies
+  nothing from the network.
+- `--listen 127.0.0.1:8480` keeps the panel on loopback; reach it over an SSH
+  tunnel. `--port 8443`, or `--domain panel.example.com --email you@example.com`,
+  work exactly as they do in an online install (a domain still needs DNS and,
+  for Let's Encrypt, outbound access — a plain `--port` does not).
+- Drop `--yes` to get the normal wizard; with `--from` it skips its repository
+  question.
+- `--dry-run` prints the plan and changes nothing, `--no-start` installs without
+  starting the service, `--root` runs the service as root instead of asking for
+  polkit.
+
+The install log is `/var/log/paqet-install-<date>.log`.
+
+**Step 5 — check it**
+
+```bash
+systemctl status paqet-panel --no-pager
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8480/
+```
+
+`200`, `302` or `401` means the panel is serving (`401` is the normal answer
+before the first administrator exists). The files are
+`/opt/paqet-panel/bin/paqet-panel`, `/etc/paqet-panel/panel.yaml` and
+`/var/lib/paqet-panel`; see [Files and services](#-files-and-services).
+
+**Step 6 — create the first administrator**
+
+Same command as an online install:
+
+```bash
+sudo -u "$(stat -c %U /var/lib/paqet-panel)" /opt/paqet-panel/bin/paqet-panel admin create \
+  -config /etc/paqet-panel/panel.yaml --username <name>
+```
+
+Then open the panel through the tunnel: `ssh -L 8480:127.0.0.1:8480 user@203.0.113.10`.
+
+**Step 7 — nodes, offline**
+
+Copy the same bundle to the node and pass the join token shown by the panel:
+
+```bash
+sudo bash install.sh node --from /root/paqet-offline/paqet-release-v0.7.44 \
+  --token '<token from the panel>' --node-listen 0.0.0.0:9443 --yes
+```
+
+**Step 8 — uninstall, offline**
+
+```bash
+sudo bash install.sh uninstall panel --from /root/paqet-offline/paqet-release-v0.7.44
+```
+
+**What an offline install cannot do**
+
+- **Updates**: the panel's *Updates* page talks to GitHub. With `--from` the
+  installer writes no `updates.panel_repo` (an existing `panel.yaml` keeps the
+  one it already has), so on a fresh install that page has nothing to check.
+  Update by carrying a new bundle over and re-running the installer (an upgrade
+  keeps `panel.yaml`, the data directory and every tunnel).
+- **Tunnel cores**: the release archive does not contain `paqet-linux-<arch>`,
+  the core that actually runs tunnels. If you have that file, put it in the
+  bundle and add its line to `SHA256SUMS` (`sha256sum paqet-linux-amd64 >>
+  SHA256SUMS`) — the installer then installs it too. Without it the panel runs,
+  but a tunnel cannot start until a core exists under `/opt/paqet/cores` (the
+  panel's own core download needs the network).
+- **Signatures**: `--pubkey` also works offline, with a `SHA256SUMS.sig` next to
+  the checksums, but the published releases are not signed, so leave it out.
+
 ### 🚩 Installer flags
 
 These are the options of `install.sh` (see `install.sh --help`).
@@ -599,6 +752,7 @@ See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 - [🧩 ارتباط بخش‌ها](#-ارتباط-بخش‌ها)
 - [📸 تصاویر](#-تصاویر)
 - [📦 پیشرفته: نصب بدون پرسش (با پرچم)](#-پیشرفته-نصب-بدون-پرسش-با-پرچم)
+- [📥 نصب آفلاین (سرور بدون اینترنت)](#-نصب-آفلاین-سرور-بدون-اینترنت)
 - [🚩 پرچم‌های نصب‌کننده](#-پرچم‌های-نصب‌کننده)
 - [🔗 راه‌اندازی نود](#-راه‌اندازی-نود)
 - [🔄 به‌روزرسانی](#-به‌روزرسانی)
@@ -909,6 +1063,165 @@ sudo systemctl restart paqet-panel
 ```
 
 برای دامنه با ACME داخلی روی پورتی غیر از ۴۴۳، پورت ۸۰ باید آزاد بماند (HTTP-01). رفتن از گواهی certbot به ACME داخلی یا HTTP ساده، hook استقرار certbot نصب‌کننده و &lrm;`/etc/paqet-panel/tls/`&lrm; را هم پاک می‌کند. برای پورت‌های ۱ تا ۱۰۲۳ بهتر است نصب‌کننده را دوباره اجرا کنید تا واحد سرویس `CAP_NET_BIND_SERVICE` داشته باشد.
+
+### 📥 نصب آفلاین (سرور بدون اینترنت)
+
+&lrm;`install.sh`&lrm; می‌تواند بدون هیچ اتصالی نصب کند: به‌جای دانلود فایل‌های
+ریلیز، آن‌ها را از پوشه‌ای که خودتان روی سرور گذاشته‌اید برمی‌دارد و همچنان
+هر فایل را با &lrm;`SHA256SUMS`&lrm; بررسی می‌کند؛ پس فایل دست‌کاری‌شده یا
+نیمه‌دانلودشده، دقیقاً مثل نصب آنلاین، نصب را متوقف می‌کند.
+
+**گام ۱ — بسته را روی یک سیستم با اینترنت بسازید**
+
+معماری سرور مقصد را از &lrm;`uname -m`&lrm; بگیرید: &lrm;`x86_64`&rlm; → &lrm;`amd64`&lrm;،
+&lrm;`aarch64`&rlm; → &lrm;`arm64`&lrm;، &lrm;`armv7l`&rlm; → &lrm;`armv7`&lrm;،
+&lrm;`i686`&rlm; → &lrm;`386`&lrm;، &lrm;`riscv64`&rlm; → &lrm;`riscv64`&lrm;.
+بعد آرشیو همان معماری و فایل checksum را بگیرید. از ریلیزی استفاده کنید که
+واقعاً فایل‌های اجرایی را دارد (ریلیز این مخزن فعلاً فقط نصاب را دارد و
+فایل‌ها از ریلیز پروژهٔ بالادست می‌آیند):
+
+```bash
+ARCH=amd64              # amd64 | arm64 | armv7 | 386 | riscv64
+TAG=v0.7.44             # ریلیزی که فایل‌های اجرایی را دارد
+mkdir paqet-offline && cd paqet-offline
+curl -fsSLO "https://github.com/behzadea12/Paqet-Panel/releases/download/$TAG/SHA256SUMS"
+curl -fsSLO "https://github.com/behzadea12/Paqet-Panel/releases/download/$TAG/paqet-release-$TAG-linux-$ARCH.tar.xz"
+sha256sum -c --ignore-missing SHA256SUMS
+tar -xJf "paqet-release-$TAG-linux-$ARCH.tar.xz"
+curl -fsSLo install.sh "https://github.com/amir12120/Paqet-AMIR/releases/latest/download/install.sh"
+```
+
+آرشیو در پوشهٔ &lrm;`paqet-release-$TAG/`&lrm; باز می‌شود و همین پوشه دقیقاً
+چیزی است که &lrm;`--from`&lrm; می‌خواهد:
+
+```text
+paqet-release-v0.7.44/
+  SHA256SUMS               فهرستی که هر فایل کپی‌شده با آن بررسی می‌شود
+  paqet-panel-linux-amd64  پنل
+  paqet-node-linux-amd64   عامل نود
+  paqet-caddy-linux-amd64  پروکسی داخلی (اختیاری)
+  update-guard.sh          نگهبان پیش از اجرای هر دو سرویس
+  uninstall.sh             برای حذف آفلاین لازم است
+  install.sh, CHANGELOG.md استفاده نمی‌شوند، ولی ضرری هم ندارند
+```
+
+&lrm;`install.sh`&lrm; کنار این پوشه، نصاب فعلی همین مخزن است (نسخهٔ داخل
+آرشیو، کپی قدیمی‌تر v0.7.44 است)؛ هر دو کار می‌کنند و بقیهٔ این صفحه دربارهٔ
+همان نصاب فعلی است.
+
+**گام ۲ — بسته را به سرور ببرید**
+
+```bash
+scp -r paqet-offline root@203.0.113.10:/root/
+```
+
+یا با فلش: &lrm;`tar -cJf paqet-offline.tar.xz paqet-offline`&lrm;، همان یک
+فایل را کپی کنید و روی سرور &lrm;`tar -xJf`&lrm; کنید.
+
+**گام ۳ — اول پیش‌نیازها را روی سرور نصب کنید**
+
+با &lrm;`--from`&lrm; نصاب چیزی دانلود نمی‌کند، پس &lrm;`curl`&lrm;،
+&lrm;`xz`&lrm; و &lrm;`ca-certificates`&lrm; لازم نیستند. ولی این‌ها لازم‌اند و
+روی سروری که اینترنت ندارد، پرسش «بسته‌های ناقص را حالا نصب کنم؟» جواب
+نمی‌دهد:
+
+```bash
+# دبیان/اوبونتو، از مخزن محلی، دیسک نصب یا apt-cacher
+apt-get install -y --no-install-recommends tar coreutils diffutils libpcap0.8
+# در اوبونتو ۲۴.۰۴ و جدیدتر همین بسته libpcap0.8t64 نام دارد
+# اختیاری: polkitd — بدون آن نصاب می‌پرسد که سرویس با root اجرا شود
+```
+
+قبل از شروع بررسی کنید تا وسط کار گیر نکنید:
+
+```bash
+command -v tar sha256sum install cmp
+ldconfig -p | grep libpcap
+```
+
+&lrm;`libpcap.so.0.8`&lrm; (یا &lrm;`libpcap.so.1`&lrm;) همان چیزی است که هستهٔ
+paqet به آن لینک است؛ اگر نباشد، خطا دیر و در میانهٔ نصب ظاهر می‌شود.
+
+**گام ۴ — نصب را اجرا کنید**
+
+```bash
+cd /root/paqet-offline
+sudo bash install.sh panel --from /root/paqet-offline/paqet-release-v0.7.44 \
+  --listen 127.0.0.1:8480 --yes
+```
+
+- &lrm;`--from DIR`&lrm; همهٔ فایل‌ها را از &lrm;`DIR`&lrm; می‌خواند (مسیر کامل،
+  نه &lrm;`~`&lrm;) و چیزی از شبکه نمی‌گیرد.
+- &lrm;`--listen 127.0.0.1:8480`&lrm; پنل را روی loopback نگه می‌دارد؛ از طریق
+  تونل SSH به آن برسید. &lrm;`--port 8443`&lrm; یا
+  &lrm;`--domain panel.example.com --email you@example.com`&lrm; هم دقیقاً مثل
+  نصب آنلاین کار می‌کنند (دامنه به DNS و برای Let's Encrypt به دسترسی خروجی
+  نیاز دارد؛ پورت ساده نه).
+- &lrm;`--yes`&lrm; را بردارید تا ویزارد معمولی بیاید؛ با &lrm;`--from`&lrm;
+  پرسش مخزن را رد می‌کند.
+- &lrm;`--dry-run`&lrm; فقط نقشه را چاپ می‌کند، &lrm;`--no-start`&lrm; نصب
+  می‌کند ولی سرویس را شروع نمی‌کند، و &lrm;`--root`&lrm; سرویس را با root اجرا
+  می‌کند و polkit نمی‌خواهد.
+
+لاگ نصب در &lrm;`/var/log/paqet-install-<date>.log`&lrm; است.
+
+**گام ۵ — بررسی**
+
+```bash
+systemctl status paqet-panel --no-pager
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8480/
+```
+
+&lrm;`200`&lrm;، &lrm;`302`&lrm; یا &lrm;`401`&lrm; یعنی پنل جواب می‌دهد
+(&lrm;`401`&lrm; پیش از ساخت اولین مدیر، پاسخ طبیعی است). فایل‌ها:
+&lrm;`/opt/paqet-panel/bin/paqet-panel`&lrm;،
+&lrm;`/etc/paqet-panel/panel.yaml`&lrm; و &lrm;`/var/lib/paqet-panel`&lrm;؛
+[بخش فایل‌ها و سرویس‌ها](#-فایل‌ها-و-سرویس‌ها) را ببینید.
+
+**گام ۶ — اولین مدیر را بسازید**
+
+همان دستور نصب آنلاین:
+
+```bash
+sudo -u "$(stat -c %U /var/lib/paqet-panel)" /opt/paqet-panel/bin/paqet-panel admin create \
+  -config /etc/paqet-panel/panel.yaml --username <name>
+```
+
+بعد پنل را از تونل باز کنید: &lrm;`ssh -L 8480:127.0.0.1:8480 user@203.0.113.10`&lrm;.
+
+**گام ۷ — نود، آفلاین**
+
+همان بسته را به نود ببرید و توکن اتصالی که پنل نشان می‌دهد را بدهید:
+
+```bash
+sudo bash install.sh node --from /root/paqet-offline/paqet-release-v0.7.44 \
+  --token '<token from the panel>' --node-listen 0.0.0.0:9443 --yes
+```
+
+**گام ۸ — حذف، آفلاین**
+
+```bash
+sudo bash install.sh uninstall panel --from /root/paqet-offline/paqet-release-v0.7.44
+```
+
+**نصب آفلاین چه کارهایی نمی‌کند**
+
+- **به‌روزرسانی**: صفحهٔ *Updates* پنل با گیت‌هاب حرف می‌زند. با
+  &lrm;`--from`&lrm; نصاب هیچ &lrm;`updates.panel_repo`&lrm; نمی‌نویسد
+  (&lrm;`panel.yaml`&lrm; موجود، همان مقدار قبلی را نگه می‌دارد)، پس در نصب تازه
+  آن صفحه چیزی برای بررسی ندارد. برای به‌روزرسانی بستهٔ جدید را ببرید و نصاب را
+  دوباره اجرا کنید (ارتقا، &lrm;`panel.yaml`&lrm;، پوشهٔ داده و همهٔ تونل‌ها را
+  نگه می‌دارد).
+- **هستهٔ تونل‌ها**: آرشیو ریلیز فایل &lrm;`paqet-linux-<arch>`&lrm; را ندارد؛
+  همان هسته‌ای که تونل را اجرا می‌کند. اگر این فایل را دارید، در بسته بگذارید و
+  خطش را به &lrm;`SHA256SUMS`&lrm; اضافه کنید
+  (&lrm;`sha256sum paqet-linux-amd64 >> SHA256SUMS`&lrm;) تا نصاب آن را هم نصب
+  کند. بدون آن، پنل اجرا می‌شود ولی تونل تا وقتی هسته‌ای در
+  &lrm;`/opt/paqet/cores`&lrm; نباشد شروع نمی‌شود (دانلود هسته از خود پنل به
+  اینترنت نیاز دارد).
+- **امضا**: &lrm;`--pubkey`&lrm; آفلاین هم کار می‌کند، با یک
+  &lrm;`SHA256SUMS.sig`&lrm; کنار فایل checksum؛ ولی ریلیزهای منتشرشده امضا
+  ندارند، پس آن را ندهید.
 
 ### 🚩 پرچم‌های نصب‌کننده
 
