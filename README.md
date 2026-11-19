@@ -4,7 +4,7 @@
 
 <h3>A web panel for managing paqet and gost tunnels</h3>
 
-[![Version](https://img.shields.io/badge/version-v0.7.44-2ea44f?style=flat-square)](https://github.com/behzadea12/Paqet-Panel/releases/tag/v0.7.44)
+[![Version](https://img.shields.io/badge/version-v0.7.44-2ea44f?style=flat-square)](https://github.com/amir12120/Paqet-AMIR)
 [![License](https://img.shields.io/badge/license-proprietary-blueviolet?style=flat-square)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-linux--amd64%20%7C%20arm64%20%7C%20armv7%20%7C%20386%20%7C%20riscv64-informational?style=flat-square)](#-requirements)
 [![Go](https://img.shields.io/badge/Go-1.27+-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev/)
@@ -14,6 +14,11 @@
 [🚀 Quick start](#-quick-start) &nbsp;·&nbsp; [✨ Features](#-features) &nbsp;·&nbsp; [📸 Screenshots](#-screenshots) &nbsp;·&nbsp; [📦 Installation](#-quick-start)
 
 </div>
+
+---
+
+> [!NOTE]
+> **This repository** (`amir12120/Paqet-AMIR`) is an independent copy of paqet-panel v0.7.44. It was split off the GitHub fork network so it can be developed on its own, and it carries the installer and these docs. While it has no release of its own, the installer takes the release files (panel, node agent, Caddy, `uninstall.sh`) from the upstream project and still verifies them against `SHA256SUMS`; publishing a release here ends that fallback. Licenses and third-party notices are unchanged: see [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
 ---
 
@@ -46,13 +51,13 @@
 On a Linux server (x86-64, ARM64, ARMv7, 32-bit x86, or RISC-V 64) with systemd, as root, run the installer with no options:
 
 ```bash
-curl -fsSL https://github.com/behzadea12/Paqet-Panel/releases/latest/download/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/amir12120/Paqet-AMIR/main/install.sh | sudo bash
 ```
 
 Or download it first, then run it:
 
 ```bash
-curl -fsSLo paqet-install.sh https://github.com/behzadea12/Paqet-Panel/releases/latest/download/install.sh && sudo bash paqet-install.sh
+curl -fsSLo paqet-install.sh https://raw.githubusercontent.com/amir12120/Paqet-AMIR/main/install.sh && sudo bash paqet-install.sh
 ```
 
 A step-by-step wizard then asks, on your own server:
@@ -62,7 +67,7 @@ A step-by-step wizard then asks, on your own server:
 3. **Node**: the join token from the panel and the agent listen address (default `0.0.0.0:9443`); see [Node setup](#-node-setup)
 4. **Summary**: review the answers and confirm
 
-Each answer is checked before the next question. The release repository is already filled in (`behzadea12/Paqet-Panel`); press Enter at that question. If a port the install needs is busy, the installer names the service and PID that hold it and asks whether to stop it, abort, or pick another port; nothing is stopped or deleted without asking. The script then downloads the release for this server's architecture, checks it against `SHA256SUMS`, and installs it.
+Each answer is checked before the next question. The release repository is already filled in (`amir12120/Paqet-AMIR`); press Enter at that question. This repository has no release of its own yet, so those files come from the upstream `behzadea12/Paqet-Panel` release and are checked against `SHA256SUMS` as always. If a port the install needs is busy, the installer names the service and PID that hold it and asks whether to stop it, abort, or pick another port; nothing is stopped or deleted without asking. The script then downloads the release for this server's architecture, checks it against `SHA256SUMS`, and installs it.
 
 The wizard needs a terminal. With the pipe form it reads the answers from `/dev/tty`; without a terminal (for example from cron or a CI job) it stops with an error and asks for the role and flags; see [non-interactive install](#-advanced-non-interactive-install-flags).
 
@@ -154,7 +159,7 @@ A Linux program with an English and Persian web UI for [paqet](https://github.co
 Everything the wizard asks can also be given as flags, for scripts and servers without a terminal. When the role (`panel` or `node`) is on the command line, the installer asks no wizard questions. In the table, `…` stands for:
 
 ```bash
-curl -fsSL https://github.com/behzadea12/Paqet-Panel/releases/latest/download/install.sh | sudo bash -s --
+curl -fsSL https://raw.githubusercontent.com/amir12120/Paqet-AMIR/main/install.sh | sudo bash -s --
 ```
 
 | Mode | Command | URL | Ports | Certificate |
@@ -177,7 +182,7 @@ curl -fsSL https://github.com/behzadea12/Paqet-Panel/releases/latest/download/in
 #### 1. Local, on loopback (default)
 
 ```bash
-curl -fsSL https://github.com/behzadea12/Paqet-Panel/releases/latest/download/install.sh \
+curl -fsSL https://raw.githubusercontent.com/amir12120/Paqet-AMIR/main/install.sh \
   | sudo bash -s -- panel
 ```
 
@@ -197,7 +202,7 @@ DNS first:
 4. Allow TCP 443 through the firewall.
 
 ```bash
-curl -fsSL https://github.com/behzadea12/Paqet-Panel/releases/latest/download/install.sh \
+curl -fsSL https://raw.githubusercontent.com/amir12120/Paqet-AMIR/main/install.sh \
   | sudo bash -s -- panel --domain panel.example.com --email you@example.com
 ```
 
@@ -212,7 +217,7 @@ If 443 is not usable, add `--port N`: see [HTTPS without port 443](#3-https-with
 **A. Automatic, with the built-in Let's Encrypt client (HTTP-01 on port 80).** With `--port N` and `--email`, and no certbot certificate for the name, the panel serves HTTPS on port N and answers the Let's Encrypt HTTP-01 challenge on port 80:
 
 ```bash
-curl -fsSL https://github.com/behzadea12/Paqet-Panel/releases/latest/download/install.sh \
+curl -fsSL https://raw.githubusercontent.com/amir12120/Paqet-AMIR/main/install.sh \
   | sudo bash -s -- panel --domain panel.example.com --port 8443 --email you@example.com
 ```
 
@@ -224,7 +229,7 @@ curl -fsSL https://github.com/behzadea12/Paqet-Panel/releases/latest/download/in
 **B. A certbot certificate, set during install.** If `/etc/letsencrypt/live/panel.example.com/fullchain.pem` and `privkey.pem` already exist, `--domain` uses them (no `--email` needed) and `--port` may be any port:
 
 ```bash
-curl -fsSL https://github.com/behzadea12/Paqet-Panel/releases/latest/download/install.sh \
+curl -fsSL https://raw.githubusercontent.com/amir12120/Paqet-AMIR/main/install.sh \
   | sudo bash -s -- panel --domain panel.example.com --port 8443
 ```
 
@@ -256,7 +261,7 @@ The panel re-reads those files on every TLS handshake, so a later renewal of the
 There is no installer flag that issues a self-signed certificate. This mode is plain HTTP:
 
 ```bash
-curl -fsSL https://github.com/behzadea12/Paqet-Panel/releases/latest/download/install.sh \
+curl -fsSL https://raw.githubusercontent.com/amir12120/Paqet-AMIR/main/install.sh \
   | sudo bash -s -- panel --port 8480
 ```
 
@@ -337,7 +342,7 @@ These are the options of `install.sh` (see `install.sh --help`).
 
 | Flag | What it does |
 | --- | --- |
-| `--repo OWNER/NAME` | Repository that carries the release (default `behzadea12/Paqet-Panel`) |
+| `--repo OWNER/NAME` | Repository that carries the release (default `amir12120/Paqet-AMIR`; while it has no release, the files fall back to `behzadea12/Paqet-Panel`) |
 | `--interactive`, `-i` | Start the wizard, with the given flags as defaults (also the default when no role is given and a terminal is available) |
 | `--listen ADDR` | Panel listen address (default `127.0.0.1:8480`) |
 | `--port N` | Listen on `0.0.0.0:N` (with `--domain`: HTTPS on that port) |
@@ -349,6 +354,7 @@ These are the options of `install.sh` (see `install.sh --help`).
 | `--root` | Run the service as root (no polkit rule); only if polkit with JavaScript rules is unavailable |
 | `--no-start` | Install but do not start the service |
 | `--pubkey BASE64` | Require a valid ed25519 signature on `SHA256SUMS`. Only for releases you sign yourself: the published releases have no `SHA256SUMS.sig`, so `--pubkey` stops with "release is not signed" (the checksums are always verified) |
+| `--mirror URL` | `https://` prefix of a GitHub proxy used for the downloads (or `PAQET_MIRROR`), for networks where GitHub is slow, filtered or rate-limited. Files are still checked against `SHA256SUMS` |
 | `--version TAG` | Release tag (default: latest) |
 
 `install.sh uninstall panel|node` (and `uninstall.sh` in the release archive) takes `--yes`, `--purge` and `--remove-tunnels`.
@@ -364,7 +370,7 @@ The one-liner checks the options before it downloads anything. The join token is
 Create a join token in the panel (**Nodes → Add node**), then on that server run the same command with no options:
 
 ```bash
-curl -fsSL https://github.com/behzadea12/Paqet-Panel/releases/latest/download/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/amir12120/Paqet-AMIR/main/install.sh | sudo bash
 ```
 
 In the wizard, choose `node`, paste the join token, keep or change the agent listen address (default `0.0.0.0:9443`), and confirm the summary. The **Add node** dialog also shows a ready install command with the token for that server.
@@ -372,7 +378,7 @@ In the wizard, choose `node`, paste the join token, keep or change the agent lis
 Without a terminal, use flags instead:
 
 ```bash
-curl -fsSL https://github.com/behzadea12/Paqet-Panel/releases/latest/download/install.sh \
+curl -fsSL https://raw.githubusercontent.com/amir12120/Paqet-AMIR/main/install.sh \
   | sudo bash -s -- node --token <join-token>
 ```
 
@@ -380,7 +386,7 @@ curl -fsSL https://github.com/behzadea12/Paqet-Panel/releases/latest/download/in
 > You can pass the token in `PAQET_NODE_TOKEN` instead of `--token` (safer: flags show up in `ps`). Put it after `sudo`, because `sudo` does not pass on variables set before it:
 >
 > ```bash
-> curl -fsSL https://github.com/behzadea12/Paqet-Panel/releases/latest/download/install.sh \
+> curl -fsSL https://raw.githubusercontent.com/amir12120/Paqet-AMIR/main/install.sh \
 >   | sudo PAQET_NODE_TOKEN=<join-token> bash -s -- node
 > ```
 
@@ -404,7 +410,7 @@ Run the same one-liner again (or add `--version v0.7.44`). Config and data are k
 Run the installer with `uninstall`; it downloads the release, checks `uninstall.sh` against `SHA256SUMS`, and runs it:
 
 ```bash
-curl -fsSL https://github.com/behzadea12/Paqet-Panel/releases/latest/download/install.sh | sudo bash -s -- uninstall panel
+curl -fsSL https://raw.githubusercontent.com/amir12120/Paqet-AMIR/main/install.sh | sudo bash -s -- uninstall panel
 ```
 
 On a node, use `uninstall node` instead. From an unpacked release archive, `sudo bash paqet-release-v0.7.44/uninstall.sh panel` does the same. By default, config, data and running tunnels are kept. Add `--purge` to also be offered deletion of data, config and service users, and `--remove-tunnels` to be offered stopping and removing tunnels on that server (their configs, the cores, tunnel statistics in `/var/lib/paqet` and the automatic tunnel firewall rules `paqet-autofw-*`, also from `/etc/iptables/rules.v4`). Both still ask first unless you also pass `--yes`; without a terminal, `--yes` is required.
@@ -417,6 +423,7 @@ On a node, use `uninstall node` instead. From an unpacked release archive, `sudo
 - systemd
 - root privileges for install, update and uninstall
 - `curl` to fetch the installer. Anything else that is missing (`ca-certificates`, `tar`, `xz-utils`, `libpcap`, which the paqet core needs, and `polkitd` on a fresh install) is detected by the installer and installed with the system package manager (apt, dnf, yum, zypper, pacman or apk) after you confirm (Enter = yes; automatic with `--yes`). Nothing is installed without asking, and if a package cannot be installed the installer stops and prints the command to run.
+- a route to GitHub. The preflight installs the packages **before** it checks the network, so a missing `ca-certificates` or `curl` no longer shows up as a GitHub error; if GitHub itself is slow or filtered the installer reports which part failed (DNS, TLS, timeout) and continues through a mirror. See [the preflight prompt](#-troubleshooting).
 
 > [!NOTE]
 > The release includes the panel, the node agent, bundled Caddy (`paqet-proxy`), and the install scripts. The paqet core is installed separately.
@@ -534,6 +541,21 @@ Download again from the same release. Archives are published per architecture (`
 
 </details>
 
+<details>
+<summary><b>The wizard says "A preflight check failed. Continue anyway? [n]", or the download stalls.</b></summary>
+
+The prompt comes from the preflight, which checks systemd, free disk space, the packages the panel needs, and the route to GitHub. The lines above the prompt name the check that failed:
+
+- **`prerequisites: ok` but the network check failed** — the packages were installed first, so this is really the network. The installer prints whether it was DNS (`does not resolve`), TLS (no CA bundle) or a timeout/reset, and then tries `github.com` and a GitHub mirror on its own. If it says a mirror is in use, the install continues normally; the files are still checked against `SHA256SUMS`.
+- **DNS** — put a resolver that answers at the top of `/etc/resolv.conf` (`nameserver 1.1.1.1`), then run the installer again.
+- **A slow or filtered route to GitHub** (common on Iranian servers) — keep the prompt's default answer only when you are sure the files are reachable; otherwise abort and re-run with a proxy prefix of your own: `curl -fsSL <installer> | sudo bash -s -- --mirror https://your-proxy.example`. `PAQET_MIRROR=https://…` does the same.
+- **Nothing reaches GitHub at all** — install offline: download the release archive for this architecture and its `SHA256SUMS`, put them in one directory and run `sudo bash install.sh --from DIR`.
+- **systemd missing** — the panel is a systemd service. A container without systemd cannot run it; use a KVM VPS or a container image with systemd.
+
+The prompt is the last question only because it can be answered; answering `n` stops before anything is changed.
+
+</details>
+
 ---
 
 ### 🔐 Security notes
@@ -566,6 +588,9 @@ See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
 </div>
 
+> [!NOTE]
+> **این مخزن** (&lrm;`amir12120/Paqet-AMIR`&lrm;) یک نسخهٔ مستقل از paqet-panel v0.7.44 است که از شبکهٔ فورک گیت‌هاب جدا شده تا جداگانه توسعه داده شود؛ اسکریپت نصب و این مستندات همین‌جا هستند. تا وقتی این مخزن ریلیز اختصاصی خودش را منتشر نکرده، فایل‌های ریلیز (پنل، عامل نود، Caddy و &lrm;`uninstall.sh`&lrm;) از پروژهٔ بالادست گرفته می‌شوند و مثل همیشه با &lrm;`SHA256SUMS`&lrm; بررسی می‌شوند؛ با انتشار اولین ریلیز در این مخزن، این جایگزین دیگر استفاده نمی‌شود. مجوز و اعلان‌های شخص ثالث تغییری نکرده‌اند: &rlm;[LICENSE](LICENSE) و [NOTICE](NOTICE) را ببینید.
+
 <details>
 <summary><b>📑 فهرست مطالب</b></summary>
 
@@ -593,13 +618,13 @@ See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 روی سرور لینوکس (x86-64،&rlm; ARM64،&rlm; ARMv7،&rlm; x86 &rlm;۳۲ بیتی یا RISC-V &rlm;۶۴ بیتی) با systemd، با دسترسی root، اسکریپت نصب را بدون هیچ گزینه‌ای اجرا کنید:
 
 ```bash
-curl -fsSL https://github.com/behzadea12/Paqet-Panel/releases/latest/download/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/amir12120/Paqet-AMIR/main/install.sh | sudo bash
 ```
 
 یا اول دانلود کنید، بعد اجرا کنید:
 
 ```bash
-curl -fsSLo paqet-install.sh https://github.com/behzadea12/Paqet-Panel/releases/latest/download/install.sh && sudo bash paqet-install.sh
+curl -fsSLo paqet-install.sh https://raw.githubusercontent.com/amir12120/Paqet-AMIR/main/install.sh && sudo bash paqet-install.sh
 ```
 
 بعد یک راهنمای مرحله‌به‌مرحله روی سرور خودتان این‌ها را می‌پرسد:
@@ -609,7 +634,7 @@ curl -fsSLo paqet-install.sh https://github.com/behzadea12/Paqet-Panel/releases/
 3. **نود**: توکن اتصال از پنل و آدرس گوش دادن نود (پیش‌فرض &lrm;`0.0.0.0:9443`&lrm;)؛ [راه‌اندازی نود](#-راه‌اندازی-نود) را ببینید
 4. **خلاصه**: پاسخ‌ها را مرور و تأیید کنید
 
-هر پاسخ قبل از سؤال بعدی بررسی می‌شود. مخزن ریلیز از قبل پر شده است (&lrm;`behzadea12/Paqet-Panel`&lrm;)؛ در آن سؤال فقط Enter بزنید. اگر پورتی که نصب لازم دارد اشغال باشد، نصب‌کننده سرویس و PID آن را نشان می‌دهد و می‌پرسد متوقفش کند، کار را لغو کند یا پورت دیگری انتخاب شود؛ بدون پرسیدن چیزی متوقف یا حذف نمی‌شود. بعد اسکریپت ریلیز مناسب معماری همین سرور را دانلود می‌کند، با `SHA256SUMS` بررسی می‌کند و نصب می‌کند.
+هر پاسخ قبل از سؤال بعدی بررسی می‌شود. مخزن ریلیز از قبل پر شده است (&lrm;`amir12120/Paqet-AMIR`&lrm;)؛ در آن سؤال فقط Enter بزنید. این مخزن هنوز ریلیز اختصاصی ندارد، پس آن فایل‌ها از ریلیز بالادست (&lrm;`behzadea12/Paqet-Panel`&lrm;) گرفته و مثل همیشه با &lrm;`SHA256SUMS`&lrm; بررسی می‌شوند. اگر پورتی که نصب لازم دارد اشغال باشد، نصب‌کننده سرویس و PID آن را نشان می‌دهد و می‌پرسد متوقفش کند، کار را لغو کند یا پورت دیگری انتخاب شود؛ بدون پرسیدن چیزی متوقف یا حذف نمی‌شود. بعد اسکریپت ریلیز مناسب معماری همین سرور را دانلود می‌کند، با `SHA256SUMS` بررسی می‌کند و نصب می‌کند.
 
 راهنما به ترمینال نیاز دارد. در حالت لوله (&lrm;`|`&lrm;) پاسخ‌ها را از &lrm;`/dev/tty`&lrm; می‌خواند؛ بدون ترمینال (مثلاً از cron یا CI) با خطا متوقف می‌شود و نقش و پرچم‌ها را می‌خواهد؛ [نصب بدون پرسش](#-پیشرفته-نصب-بدون-پرسش-با-پرچم) را ببینید.
 
@@ -691,7 +716,7 @@ ssh -L 8480:127.0.0.1:8480 user@203.0.113.10
 </div>
 
 ```bash
-curl -fsSL https://github.com/behzadea12/Paqet-Panel/releases/latest/download/install.sh | sudo bash -s --
+curl -fsSL https://raw.githubusercontent.com/amir12120/Paqet-AMIR/main/install.sh | sudo bash -s --
 ```
 
 <div dir="rtl">
@@ -720,7 +745,7 @@ curl -fsSL https://github.com/behzadea12/Paqet-Panel/releases/latest/download/in
 #### ۱. محلی، روی loopback (پیش‌فرض)
 
 ```bash
-curl -fsSL https://github.com/behzadea12/Paqet-Panel/releases/latest/download/install.sh \
+curl -fsSL https://raw.githubusercontent.com/amir12120/Paqet-AMIR/main/install.sh \
   | sudo bash -s -- panel
 ```
 
@@ -740,7 +765,7 @@ curl -fsSL https://github.com/behzadea12/Paqet-Panel/releases/latest/download/in
 4. پورت ۴۴۳ را در فایروال باز کنید.
 
 ```bash
-curl -fsSL https://github.com/behzadea12/Paqet-Panel/releases/latest/download/install.sh \
+curl -fsSL https://raw.githubusercontent.com/amir12120/Paqet-AMIR/main/install.sh \
   | sudo bash -s -- panel --domain panel.example.com --email you@example.com
 ```
 
@@ -755,7 +780,7 @@ curl -fsSL https://github.com/behzadea12/Paqet-Panel/releases/latest/download/in
 **الف. خودکار، با کلاینت داخلی Let's Encrypt (‏HTTP-01 روی پورت ۸۰).** با &lrm;`--port N`&lrm; و &lrm;`--email`&lrm;، وقتی برای این دامنه گواهی certbot وجود ندارد، پنل HTTPS را روی پورت N می‌دهد و چالش HTTP-01 را روی پورت ۸۰ جواب می‌دهد:
 
 ```bash
-curl -fsSL https://github.com/behzadea12/Paqet-Panel/releases/latest/download/install.sh \
+curl -fsSL https://raw.githubusercontent.com/amir12120/Paqet-AMIR/main/install.sh \
   | sudo bash -s -- panel --domain panel.example.com --port 8443 --email you@example.com
 ```
 
@@ -767,7 +792,7 @@ curl -fsSL https://github.com/behzadea12/Paqet-Panel/releases/latest/download/in
 **ب. گواهی certbot، در همان نصب.** اگر فایل‌های &lrm;`/etc/letsencrypt/live/panel.example.com/fullchain.pem`&lrm; و `privkey.pem` از قبل موجود باشند، &lrm;`--domain`&lrm; همان‌ها را استفاده می‌کند (بدون &lrm;`--email`&lrm;) و &lrm;`--port`&lrm; می‌تواند هر پورتی باشد:
 
 ```bash
-curl -fsSL https://github.com/behzadea12/Paqet-Panel/releases/latest/download/install.sh \
+curl -fsSL https://raw.githubusercontent.com/amir12120/Paqet-AMIR/main/install.sh \
   | sudo bash -s -- panel --domain panel.example.com --port 8443
 ```
 
@@ -803,7 +828,7 @@ sudo systemctl restart paqet-panel
 پرچمی برای گواهی خودامضا وجود ندارد. این حالت HTTP ساده است:
 
 ```bash
-curl -fsSL https://github.com/behzadea12/Paqet-Panel/releases/latest/download/install.sh \
+curl -fsSL https://raw.githubusercontent.com/amir12120/Paqet-AMIR/main/install.sh \
   | sudo bash -s -- panel --port 8480
 ```
 
@@ -894,7 +919,7 @@ sudo systemctl restart paqet-panel
 
 | پرچم | کار |
 | --- | --- |
-| &lrm;`--repo OWNER/NAME`&lrm; | مخزنی که ریلیز در آن است (پیش‌فرض &lrm;`behzadea12/Paqet-Panel`&lrm;) |
+| &lrm;`--repo OWNER/NAME`&lrm; | مخزنی که ریلیز در آن است (پیش‌فرض &lrm;`amir12120/Paqet-AMIR`&lrm;؛ تا وقتی ریلیزی نداشته باشد، فایل‌ها از &lrm;`behzadea12/Paqet-Panel`&lrm; گرفته می‌شوند) |
 | &lrm;`--interactive`&lrm;،&rlm; &lrm;`-i`&lrm; | راهنما را شروع می‌کند و پرچم‌های داده‌شده پیش‌فرض می‌شوند (وقتی نقش داده نشود و ترمینال باشد هم همین پیش‌فرض است) |
 | &lrm;`--listen ADDR`&lrm; | آدرس گوش دادن پنل (پیش‌فرض &lrm;`127.0.0.1:8480`&lrm;) |
 | &lrm;`--port N`&lrm; | گوش دادن روی &lrm;`0.0.0.0:N`&lrm; (با &lrm;`--domain`&lrm;: ‏HTTPS روی همان پورت) |
@@ -906,6 +931,7 @@ sudo systemctl restart paqet-panel
 | &lrm;`--root`&lrm; | سرویس را با root اجرا می‌کند (بدون قانون polkit)؛ فقط اگر polkit با قوانین JavaScript نباشد |
 | &lrm;`--no-start`&lrm; | نصب می‌کند ولی سرویس را راه نمی‌اندازد |
 | &lrm;`--pubkey BASE64`&lrm; | امضای معتبر ed25519 روی `SHA256SUMS` لازم است. فقط برای ریلیزهایی که خودتان امضا می‌کنید: ریلیزهای منتشرشده &lrm;`SHA256SUMS.sig`&lrm; ندارند و با &lrm;`--pubkey`&lrm; خطای «release is not signed» می‌گیرید (چک‌سام‌ها همیشه بررسی می‌شوند) |
+| &lrm;`--mirror URL`&lrm; | پیشوند &lrm;`https://`&lrm; یک پراکسی گیت‌هاب برای دانلودها (یا &lrm;`PAQET_MIRROR`&lrm;)؛ برای شبکه‌هایی که گیت‌هاب کند، محدود یا مسدود است. فایل‌ها همچنان با &lrm;`SHA256SUMS`&lrm; بررسی می‌شوند |
 | &lrm;`--version TAG`&lrm; | برچسب نسخه (پیش‌فرض: آخرین نسخه) |
 
 &rlm;&lrm;`install.sh uninstall panel|node`&lrm; (و `uninstall.sh` داخل آرشیو ریلیز) این‌ها را می‌پذیرد: &lrm;`--yes`&lrm;،&rlm; &lrm;`--purge`&lrm;،&rlm; &lrm;`--remove-tunnels`&lrm;.
@@ -921,7 +947,7 @@ sudo systemctl restart paqet-panel
 از پنل یک توکن اتصال بگیرید (**نودها ← افزودن نود**)، بعد روی آن سرور همان فرمان را بدون گزینه اجرا کنید:
 
 ```bash
-curl -fsSL https://github.com/behzadea12/Paqet-Panel/releases/latest/download/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/amir12120/Paqet-AMIR/main/install.sh | sudo bash
 ```
 
 در راهنما `node` را انتخاب کنید، توکن اتصال را بچسبانید، آدرس گوش دادن نود را نگه دارید یا عوض کنید (پیش‌فرض &lrm;`0.0.0.0:9443`&lrm;) و خلاصه را تأیید کنید. پنجرهٔ **افزودن نود** در پنل هم فرمان نصب آماده را همراه توکن همان سرور نشان می‌دهد.
@@ -929,7 +955,7 @@ curl -fsSL https://github.com/behzadea12/Paqet-Panel/releases/latest/download/in
 بدون ترمینال، از پرچم‌ها استفاده کنید:
 
 ```bash
-curl -fsSL https://github.com/behzadea12/Paqet-Panel/releases/latest/download/install.sh \
+curl -fsSL https://raw.githubusercontent.com/amir12120/Paqet-AMIR/main/install.sh \
   | sudo bash -s -- node --token <join-token>
 ```
 
@@ -939,7 +965,7 @@ curl -fsSL https://github.com/behzadea12/Paqet-Panel/releases/latest/download/in
 > به‌جای &lrm;`--token`&lrm; می‌توانید توکن را در `PAQET_NODE_TOKEN` بدهید (بهتر است؛ پرچم‌ها در `ps` دیده می‌شوند). متغیر را بعد از `sudo` بنویسید، چون `sudo` متغیرهایی را که قبل از آن آمده‌اند منتقل نمی‌کند:
 >
 > ```bash
-> curl -fsSL https://github.com/behzadea12/Paqet-Panel/releases/latest/download/install.sh \
+> curl -fsSL https://raw.githubusercontent.com/amir12120/Paqet-AMIR/main/install.sh \
 >   | sudo PAQET_NODE_TOKEN=<join-token> bash -s -- node
 > ```
 
@@ -973,7 +999,7 @@ curl -fsSL https://github.com/behzadea12/Paqet-Panel/releases/latest/download/in
 نصب‌کننده را با `uninstall` اجرا کنید؛ ریلیز را دانلود می‌کند، `uninstall.sh` را با `SHA256SUMS` بررسی می‌کند و اجرایش می‌کند:
 
 ```bash
-curl -fsSL https://github.com/behzadea12/Paqet-Panel/releases/latest/download/install.sh | sudo bash -s -- uninstall panel
+curl -fsSL https://raw.githubusercontent.com/amir12120/Paqet-AMIR/main/install.sh | sudo bash -s -- uninstall panel
 ```
 
 روی نود به‌جای آن از &lrm;`uninstall node`&lrm; استفاده کنید. از آرشیو ریلیز بازشده هم &lrm;`sudo bash paqet-release-v0.7.44/uninstall.sh panel`&lrm; همین کار را می‌کند. به‌طور پیش‌فرض پیکربندی، داده‌ها و تونل‌های در حال اجرا می‌مانند. با &lrm;`--purge`&lrm; حذف داده، پیکربندی و کاربر سرویس هم پیشنهاد می‌شود، و با &lrm;`--remove-tunnels`&lrm; توقف و حذف تونل‌های همان سرور (پیکربندی‌ها، هسته‌ها، آمار تونل در &lrm;`/var/lib/paqet`&lrm; و قوانین خودکار فایروال تونل &lrm;`paqet-autofw-*`&lrm;، از جمله در &lrm;`/etc/iptables/rules.v4`&lrm;). تا وقتی &lrm;`--yes`&lrm; ندهید، هر دو از شما تأیید می‌خواهند؛ بدون ترمینال، &lrm;`--yes`&lrm; لازم است.
@@ -986,6 +1012,7 @@ curl -fsSL https://github.com/behzadea12/Paqet-Panel/releases/latest/download/in
 - &rlm;systemd
 - دسترسی root برای نصب، به‌روزرسانی و حذف
 - &lrm;`curl`&lrm; برای دریافت اسکریپت نصب. بقیهٔ چیزهایی که نباشند (&lrm;`ca-certificates`&lrm;،&rlm; &lrm;`tar`&lrm;،&rlm; &lrm;`xz-utils`&lrm;،&rlm; &lrm;`libpcap`&lrm; که هستهٔ paqet لازم دارد، و &lrm;`polkitd`&lrm; در نصب تازه) را نصب‌کننده پیدا می‌کند و بعد از تأیید شما (Enter یعنی بله؛ با &lrm;`--yes`&lrm; خودکار) با مدیر بستهٔ سیستم (apt،&rlm; dnf،&rlm; yum،&rlm; zypper،&rlm; pacman یا apk) نصب می‌کند. بدون پرسیدن چیزی نصب نمی‌شود و اگر نصب بسته‌ای ممکن نباشد، نصب‌کننده متوقف می‌شود و دستور لازم را نشان می‌دهد.
+- دسترسی به گیت‌هاب. پیش‌بررسی، بسته‌ها را **قبل** از بررسی شبکه نصب می‌کند تا نبودِ &lrm;`ca-certificates`&lrm; یا &lrm;`curl`&lrm; به‌صورت خطای گیت‌هاب دیده نشود؛ اگر خودِ گیت‌هاب کند یا محدود باشد، نصاب می‌گوید کدام بخش شکست خورده (DNS،&rlm; TLS یا timeout) و از راه mirror ادامه می‌دهد. [پرسش پیش‌بررسی](#-رفع-اشکال) را ببینید.
 
 </div>
 
@@ -1108,6 +1135,21 @@ sudo systemctl start paqet-panel
 <summary><b>&rlm;<code>sha256sum</code> شکست می‌خورد، یا روی این سرور اجرا نمی‌شود.</b></summary>
 
 دوباره از همان ریلیز بگیرید. برای هر معماری یک بایگانی جدا هست (&lrm;`linux-amd64`&lrm;،&rlm; &lrm;`linux-arm64`&lrm;،&rlm; &lrm;`linux-armv7`&lrm;،&rlm; &lrm;`linux-386`&lrm;،&rlm; &lrm;`linux-riscv64`&lrm;)؛ همان یک فرمان، نسخهٔ مناسب همین سرور را برمی‌دارد.
+
+</details>
+
+<details>
+<summary><b>راهنما می‌گوید «A preflight check failed. Continue anyway? [n]» یا دانلود گیر می‌کند.</b></summary>
+
+این پرسش از پیش‌بررسی می‌آید که systemd، فضای دیسک، بسته‌های لازم پنل و مسیر رسیدن به گیت‌هاب را بررسی می‌کند. سطرهای بالای پرسش می‌گویند کدام بررسی شکست خورده است:
+
+- **&lrm;`prerequisites: ok`&lrm; ولی بررسی شبکه شکست خورده** — بسته‌ها اول نصب شده‌اند، پس مشکل واقعاً شبکه است. نصاب می‌گوید DNS بوده (&lrm;`does not resolve`&lrm;)، یا TLS (نبود CA)، یا timeout/قطع اتصال؛ بعد خودش &lrm;`github.com`&lrm; و یک mirror گیت‌هاب را امتحان می‌کند. اگر بگوید از mirror استفاده می‌کند، نصب عادی ادامه پیدا می‌کند و فایل‌ها همچنان با &lrm;`SHA256SUMS`&lrm; بررسی می‌شوند.
+- **DNS** — بالای &lrm;`/etc/resolv.conf`&lrm; یک resolver سالم بگذارید (&lrm;`nameserver 1.1.1.1`&lrm;) و نصاب را دوباره اجرا کنید.
+- **مسیر کند یا محدود به گیت‌هاب** (روی خیلی از سرورهای ایران) — فقط وقتی جواب پیش‌فرض پرسش را نگه دارید که مطمئنید فایل‌ها قابل دریافت‌اند؛ وگرنه لغو کنید و با پراکسی خودتان اجرا کنید: &lrm;`curl -fsSL <installer> | sudo bash -s -- --mirror https://your-proxy.example`&lrm;. متغیر &lrm;`PAQET_MIRROR=https://…`&lrm; هم همین کار را می‌کند.
+- **هیچ راهی به گیت‌هاب نیست** — نصب آفلاین: بایگانی ریلیز مناسب معماری همین سرور و &lrm;`SHA256SUMS`&lrm; را دانلود کنید، هر دو را در یک پوشه بگذارید و اجرا کنید: &lrm;`sudo bash install.sh --from DIR`&lrm;.
+- **نبودِ systemd** — پنل یک سرویس systemd است. کانتینری که systemd ندارد نمی‌تواند آن را اجرا کند؛ از VPS با KVM یا ایمیج کانتینر با systemd استفاده کنید.
+
+این پرسش آخرین سؤال است چون می‌شود جوابش را داد؛ جواب &lrm;`n`&lrm; قبل از هر تغییری کار را متوقف می‌کند.
 
 </details>
 

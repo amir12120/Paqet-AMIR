@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 # paqet-panel / paqet-node installer.
 #
-#   curl -fsSL https://github.com/behzadea12/Paqet-Panel/releases/latest/download/install.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/amir12120/Paqet-AMIR/main/install.sh | sudo bash
 #   sudo bash install.sh                 # interactive wizard (needs a TTY)
 #   sudo bash install.sh panel [options]
 #   sudo bash install.sh node  --token pqn1.... [options]
 #   sudo bash install.sh uninstall panel|node [--purge] [--remove-tunnels]
 #
 # Releases come from DEFAULT_REPO below unless --repo (or PAQET_REPO) names
-# another repository.
+# another repository. This repository carries the installer and the docs; while
+# it has no release of its own, the release files (panel, node agent, Caddy,
+# uninstall.sh) are taken from FALLBACK_REPO and checked against SHA256SUMS
+# exactly like any other download.
 #
 # Two modes:
 #   (A) One-liner / flags: non-interactive. On a port conflict it fails
@@ -37,7 +40,10 @@ DRY_RUN=0
 TAG=""
 # Repository whose releases this installer uses by default (--repo or
 # PAQET_REPO override it; --from DIR uses no repository).
-DEFAULT_REPO="behzadea12/Paqet-Panel"
+DEFAULT_REPO="amir12120/Paqet-AMIR"
+# Until this repository publishes its own release, the release files are taken
+# from the upstream project below (set PAQET_FALLBACK_REPO= to disable that).
+FALLBACK_REPO="${PAQET_FALLBACK_REPO-behzadea12/Paqet-Panel}"
 REPO="${PAQET_REPO:-}"
 REPO_SET=0 # 1 = --repo on the command line (the wizard does not ask then)
 CORE_REPO="${PAQET_CORE_REPO:-}"
@@ -108,7 +114,9 @@ restarted if the installer fails. pkill/killall are never used.
 
 Release source:
   --repo OWNER/NAME     repository whose releases carry paqet-panel/paqet-node
-                        (default behzadea12/Paqet-Panel)
+                        (default amir12120/Paqet-AMIR; the release files
+                        fall back to behzadea12/Paqet-Panel until this
+                        repository publishes its own release)
   --core-repo OWNER/NAME
                         repository with paqet-linux-<arch> (installs the core too)
   --api URL             GitHub-compatible API (default https://api.github.com;
@@ -118,6 +126,10 @@ Release source:
   --pubkey BASE64       require a valid ed25519 signature on SHA256SUMS
                         (only for releases you sign yourself: the published
                         releases have no SHA256SUMS.sig)
+  --mirror URL          https:// prefix of a GitHub proxy used for the
+                        downloads (or PAQET_MIRROR); for networks where
+                        GitHub is slow, filtered or rate-limited. Files are
+                        still checked against SHA256SUMS
 
 Panel:
   --listen ADDR         listen address (default 127.0.0.1:8480)
@@ -247,6 +259,7 @@ parse_flags() {
       --version) need_value "$@" && TAG=$2 && shift ;;
       --from) need_value "$@" && FROM_DIR=$2 && shift ;;
       --pubkey) need_value "$@" && PUBKEY=$2 && shift ;;
+      --mirror) need_value "$@" && MIRROR=$2 && shift ;;
       --listen) need_value "$@" && LISTEN=$2 && shift ;;
       --port) need_value "$@" && PORT=$2 && shift ;;
       --domain) need_value "$@" && DOMAIN=$2 && shift ;;
@@ -662,9 +675,128 @@ domain_points_here() { # domain_points_here NAME  (0 = yes or skipped)
   [ "$match" = 1 ]
 }
 
+# --- GitHub access (v0.7.45) ------------------------------------------------
+# On some networks, Iranian servers in particular, api.github.com and the
+# release host answer slowly, time out, or are filtered. Every GitHub request
+# below retries, and a failed request is retried through a mirror (--mirror /
+# PAQET_MIRROR, else the prefixes in MIRROR_PREFIXES). Downloads are still
+# checked against SHA256SUMS (and the signature with --pubkey), so a mirror
+# cannot change what gets installed. When only the API is blocked the release
+# files are fetched from github.com directly.
+MIRROR="${PAQET_MIRROR:-}"
+MIRROR_PREFIXES="${PAQET_MIRROR_PREFIXES-https://ghfast.top https://gh-proxy.com}"
+MIRROR_USED=""
+API_DISABLED="${API_DISABLED:-}"
+
+# validate_mirror: --mirror / PAQET_MIRROR must be an https:// prefix.
+validate_mirror() {
+  [ -n "$MIRROR" ] || return 0
+  local re_mirror='^https://[A-Za-z0-9._~:/?%&=+-]+$'
+  [[ $MIRROR =~ $re_mirror ]] ||
+    die "--mirror must be an https:// prefix (example: https://ghfast.top)"
+  MIRROR=${MIRROR%/}
+}
+
+# http_probe URL: 0 when the host answered at all. Any status counts: 403 and
+# 429 are GitHub rate limits, not a broken route.
+http_probe() {
+  local code
+  code=$(curl -sS -o /dev/null -w '%{http_code}' --retry 2 --retry-delay 1 \
+    --connect-timeout 8 --max-time 25 --proto '=https,http' "$1" 2>/dev/null) || return 1
+  [ -n "$code" ] && [ "$code" != 000 ]
+}
+
+# dns_resolves HOST: 0 when this server can resolve HOST over IPv4.
+dns_resolves() {
+  local h=$1
+  if command -v getent >/dev/null 2>&1; then
+    [ -n "$(getent ahostsv4 "$h" 2>/dev/null)" ]
+  else
+    command -v nslookup >/dev/null 2>&1 && nslookup "$h" >/dev/null 2>&1
+  fi
+}
+
+# net_diagnose HOST URL: name the part of the route that failed and its fix.
+net_diagnose() {
+  local h=$1 url=$2
+  if ! dns_resolves "$h"; then
+    warn "DNS: $h does not resolve here (the resolver on this server is not answering)"
+    say "fix the resolver and re-run, e.g. put nameserver 1.1.1.1 at the top of /etc/resolv.conf"
+  elif [ ! -e /etc/ssl/certs/ca-certificates.crt ] && [ ! -e /etc/pki/tls/certs/ca-bundle.crt ] && [ ! -e /etc/ssl/cert.pem ]; then
+    warn "TLS: this server has no CA bundle, so every https download fails"
+    say "install it and re-run: apt-get install -y ca-certificates (or dnf install -y ca-certificates)"
+  else
+    warn "network: $url did not answer (timeout, reset, or a filtered route)"
+    say "the downloads will go through a mirror; or pass --mirror https://<prefix>,"
+    say "or --from DIR for a fully offline install"
+  fi
+}
+
+# network_check: the preflight network step. 0 = the release files can be
+# fetched, directly, from github.com, or through a mirror.
+network_check() {
+  local m host
+  if [ -n "$FROM_DIR" ]; then
+    say "network: offline install (--from $FROM_DIR)"
+    return 0
+  fi
+  if [ -n "$R" ]; then
+    say "network: skipped under PAQET_INSTALL_ROOT (test)"
+    return 0
+  fi
+  if http_probe "$API/rate_limit"; then
+    say "GitHub/API reachable: $API"
+    return 0
+  fi
+  host=$(printf '%s' "$API" | sed -E 's#^[A-Za-z]+://([^/:]+).*#\1#')
+  net_diagnose "$host" "$API/rate_limit"
+  # The API can be blocked while github.com is not; the release files are
+  # then downloaded from github.com, which needs no API call.
+  if http_probe "https://github.com/$DEFAULT_REPO"; then
+    API_DISABLED=1
+    say "github.com still answers: release files will be downloaded from github.com"
+    return 0
+  fi
+  for m in ${MIRROR:-} $MIRROR_PREFIXES; do
+    [ -n "$m" ] || continue
+    if http_probe "${m%/}/https://github.com/$DEFAULT_REPO"; then
+      MIRROR=${m%/}
+      API_DISABLED=1
+      say "github.com is reachable through ${MIRROR}; downloads will use it"
+      return 0
+    fi
+  done
+  warn "network: GitHub cannot be reached directly or through a mirror"
+  say "install offline instead: put the release files and SHA256SUMS in a directory, then run"
+  say "  sudo bash install.sh --from DIR"
+  return 1
+}
+
+# fetch_url URL DEST: download URL to DEST. The direct URL first, then the
+# mirror. 0 = DEST holds the complete file.
+fetch_url() {
+  local url=$1 dest=$2 m rc=0
+  if curl -fsSL --retry 2 --retry-delay 1 --connect-timeout 10 --max-time 600 \
+    --proto '=https,http' -o "$dest" "$url" 2>/dev/null; then
+    return 0
+  fi
+  rc=$?
+  for m in ${MIRROR:-} $MIRROR_PREFIXES; do
+    [ -n "$m" ] || continue
+    say "direct download failed; retrying through ${m}"
+    if curl -fsSL --retry 1 --connect-timeout 10 --max-time 900 \
+      --proto '=https,http' -o "$dest" "${m%/}/$url" 2>/dev/null; then
+      MIRROR_USED=${m%/}
+      return 0
+    fi
+  done
+  rm -f -- "$dest"
+  return "$rc"
+}
+
 wizard_preflight() {
   local ok=1 kb
-  step "preflight" "checking systemd, disk, and network"
+  step "preflight" "checking systemd, disk, prerequisites and network"
   if [ -n "$R" ]; then
     say "systemd: skipped under PAQET_INSTALL_ROOT (test)"
   elif [ -d /run/systemd/system ]; then
@@ -680,34 +812,38 @@ wizard_preflight() {
   elif [ -n "$kb" ]; then
     say "disk space: $((kb / 1024)) MiB free"
   fi
-  if [ -n "$FROM_DIR" ]; then
-    say "network: offline install (--from $FROM_DIR)"
-  elif [ -n "$R" ]; then
-    say "network: skipped under PAQET_INSTALL_ROOT (test)"
-  else
-    if curl -fsSI --max-time 8 --proto '=https,http' "$API" >/dev/null 2>&1; then
-      say "GitHub/API reachable: $API"
-    else
-      warn "cannot reach $API (needed unless you pass --from DIR)"
-      ok=0
-    fi
-  fi
+  # v0.7.45: the packages are installed before the network check. A server
+  # without ca-certificates or curl fails every https request, so the network
+  # check used to report a GitHub problem that was really a missing package
+  # (the "A preflight check failed" prompt on many servers).
   if [ "$DRY_RUN" != 1 ]; then
     check_prereqs
     if [ -z "$PREREQ_MISSING" ]; then
       say "prerequisites: ok"
     elif [ -n "$PREREQ_PKGS" ]; then
       say "missing on this server: $PREREQ_MISSING"
-      if wiz_yn "Install the missing packages ($PREREQ_PKGS) with $PKG_MGR (after the summary)?" "y"; then
+      if wiz_yn "Install the missing packages ($PREREQ_PKGS) with $PKG_MGR now?" "y"; then
+        install_prereqs
         PREREQ_OK=y
+        check_prereqs
+        if [ -z "$PREREQ_MISSING" ]; then
+          say "prerequisites: ok"
+        else
+          warn "still missing after installing: $PREREQ_MISSING"
+          ok=0
+        fi
       else
         PREREQ_OK=n
+        warn "continuing without $PREREQ_MISSING: the install may fail later"
       fi
     else
       warn "missing on this server: $PREREQ_MISSING (no supported package manager found; install them yourself)"
+      ok=0
     fi
   fi
+  network_check || ok=0
   [ "$ok" = 1 ] && return 0
+  warn "a check above failed; the reason is named in the lines before this one"
   if wiz_yn "A preflight check failed. Continue anyway?" "n"; then
     return 0
   fi
@@ -962,6 +1098,7 @@ validate_args() {
     http://127.0.0.1* | http://localhost*) warn "using a plain-http release mirror on loopback" ;;
     *) die "--api must use https" ;;
   esac
+  validate_mirror
   if [ -n "$PORT" ]; then
     if ! [[ $PORT =~ ^[0-9]{1,5}$ ]] || [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then die "--port must be 1-65535"; fi
     [ -z "$LISTEN" ] || die "use either --port or --listen"
@@ -1156,7 +1293,17 @@ install_prereqs() {
   fi
   local rc=0
   case $PKG_MGR in
-    apt-get) DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends $PREREQ_PKGS >>"${LOG_FILE:-/dev/null}" 2>&1 || rc=$? ;;
+    apt-get)
+      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends $PREREQ_PKGS >>"${LOG_FILE:-/dev/null}" 2>&1 || rc=$?
+      if [ "$rc" != 0 ]; then
+        # A fresh image often has an empty or half-mirrored package list
+        # ("Unable to locate package libpcap0.8"): refresh once and retry.
+        say "apt-get install failed; refreshing the package lists and retrying once"
+        DEBIAN_FRONTEND=noninteractive apt-get update -qq >>"${LOG_FILE:-/dev/null}" 2>&1 || true
+        rc=0
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends $PREREQ_PKGS >>"${LOG_FILE:-/dev/null}" 2>&1 || rc=$?
+      fi
+      ;;
     dnf | yum) "$PKG_MGR" install -y $PREREQ_PKGS >>"${LOG_FILE:-/dev/null}" 2>&1 || rc=$? ;;
     zypper) zypper --non-interactive install $PREREQ_PKGS >>"${LOG_FILE:-/dev/null}" 2>&1 || rc=$? ;;
     pacman) pacman -S --needed --noconfirm $PREREQ_PKGS >>"${LOG_FILE:-/dev/null}" 2>&1 || rc=$? ;;
@@ -1239,28 +1386,85 @@ cleanup() {
   [ -z "$TMP" ] || rm -rf -- "$TMP"
 }
 
-# fetch_release REPO: download (or copy from --from) the release's
-# SHA256SUMS (+ signature) into $TMP/<repo-dir> and echo that dir.
-fetch_release() {
-  local repo=$1 dir url tag
-  dir="$TMP/$(printf '%s' "$repo" | tr '/' '_')"
-  mkdir -p "$dir"
-  if [ -n "$FROM_DIR" ]; then
-    cp -- "$FROM_DIR/SHA256SUMS" "$dir/"
-    [ ! -f "$FROM_DIR/SHA256SUMS.sig" ] || cp -- "$FROM_DIR/SHA256SUMS.sig" "$dir/"
+# release_asset_base REPO DIR: where this release's files live on github.com.
+# The tag comes from release.json when the API answered; without it the
+# "latest/download" path still resolves to the newest release.
+release_asset_base() {
+  local repo=$1 dir=$2 tag=""
+  [ -f "$dir/TAG" ] && tag=$(head -n 1 "$dir/TAG")
+  if [ -n "$tag" ]; then
+    printf 'https://github.com/%s/releases/download/%s' "$repo" "$tag"
   else
+    printf 'https://github.com/%s/releases/latest/download' "$repo"
+  fi
+}
+
+# release_tag_from_web REPO: the tag of the latest release, read from the
+# redirect of github.com/OWNER/NAME/releases/latest (no API call needed).
+release_tag_from_web() {
+  local repo=$1 eff
+  eff=$(curl -sS -I -L --connect-timeout 10 --max-time 40 --proto '=https,http' \
+    -o /dev/null -w '%{url_effective}' "https://github.com/$repo/releases/latest" 2>/dev/null) || return 1
+  case $eff in
+    */releases/tag/*) printf '%s\n' "${eff##*/releases/tag/}" ; return 0 ;;
+  esac
+  return 1
+}
+
+# fetch_release_from REPO DIR: fill DIR from one repository. Non-zero when
+# that repository has no usable release (network, API or missing asset).
+fetch_release_from() {
+  local repo=$1 dir=$2 url tag=""
+  mkdir -p "$dir"
+  printf '%s\n' "$repo" >"$dir/REPO"
+  rm -f -- "$dir/release.json" "$dir/TAG"
+  if [ -z "$API_DISABLED" ]; then
     if [ -n "$TAG" ]; then
       url="$API/repos/$repo/releases/tags/$TAG"
     else
       url="$API/repos/$repo/releases/latest"
     fi
-    curl -fsSL --proto '=https,http' -H 'Accept: application/json' -o "$dir/release.json" "$url" ||
-      die "cannot read release info from $url"
-    tag=$(sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$dir/release.json" | head -n 1)
-    [ -n "$tag" ] || die "no release found in $repo"
-    printf '%s\n' "$tag" >"$dir/TAG"
-    download_asset "$dir" SHA256SUMS
-    download_asset "$dir" SHA256SUMS.sig optional
+    if fetch_url "$url" "$dir/release.json"; then
+      tag=$(sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$dir/release.json" | head -n 1)
+      [ -n "$tag" ] || warn "no release tag in $url"
+    else
+      warn "cannot read release info from $url"
+      rm -f -- "$dir/release.json"
+    fi
+  fi
+  if [ -z "$tag" ]; then
+    # API blocked or rate-limited: github.com (or the mirror) can serve the
+    # same release files, so the API is not required.
+    tag=${TAG:-}
+    [ -n "$tag" ] || tag=$(release_tag_from_web "$repo" 2>/dev/null || true)
+    [ -z "$tag" ] || say "release $repo: $tag (from github.com)"
+  fi
+  [ -z "$tag" ] || printf '%s\n' "$tag" >"$dir/TAG"
+  download_asset "$dir" SHA256SUMS || return 1
+  download_asset "$dir" SHA256SUMS.sig optional || true
+  return 0
+}
+
+# fetch_release REPO: download (or copy from --from) the release's
+# SHA256SUMS (+ signature) into $TMP/<repo-dir> and echo that dir. A
+# repository with no release of its own falls back to FALLBACK_REPO.
+fetch_release() {
+  local repo=$1 dir
+  dir="$TMP/$(printf '%s' "$repo" | tr '/' '_')"
+  if [ -n "$FROM_DIR" ]; then
+    mkdir -p "$dir"
+    cp -- "$FROM_DIR/SHA256SUMS" "$dir/"
+    [ ! -f "$FROM_DIR/SHA256SUMS.sig" ] || cp -- "$FROM_DIR/SHA256SUMS.sig" "$dir/"
+  elif ! fetch_release_from "$repo" "$dir"; then
+    if [ -n "$FALLBACK_REPO" ] && [ "$repo" = "$DEFAULT_REPO" ]; then
+      warn "no usable release in $repo; falling back to $FALLBACK_REPO"
+      say "files from $FALLBACK_REPO are checked against SHA256SUMS exactly like $repo's"
+      rm -rf -- "$dir"
+      fetch_release_from "$FALLBACK_REPO" "$dir" ||
+        die "cannot fetch a release from $repo or $FALLBACK_REPO (use --from DIR, or --mirror https://<prefix>)"
+    else
+      die "cannot fetch a release from $repo (use --from DIR, or --mirror https://<prefix>)"
+    fi
   fi
   verify_signature "$dir"
   maybe_unpack_arch_tarball "$dir"
@@ -1286,7 +1490,7 @@ maybe_unpack_arch_tarball() {
   }' "$dir/SHA256SUMS")
   [ -n "$name" ] || return 0
   command -v tar >/dev/null || die "tar is required to unpack $name"
-  download_asset "$dir" "$name"
+  download_asset "$dir" "$name" || die "cannot download $name (use --from DIR, or --mirror https://<prefix>)"
   (cd "$dir" && grep -E "^[0-9a-f]{64}[[:space:]]+\*?$name\$" SHA256SUMS | sha256sum -c --status -) ||
     die "checksum mismatch (or no SHA256SUMS entry) for $name"
   say "verified $name"
@@ -1301,14 +1505,27 @@ maybe_unpack_arch_tarball() {
 }
 
 download_asset() {
-  local dir=$1 name=$2 optional=${3:-} url
-  url=$(grep -o '"browser_download_url"[[:space:]]*:[[:space:]]*"[^"]*/'"$name"'"' "$dir/release.json" |
-    sed 's/.*"\(http[^"]*\)"$/\1/' | head -n 1 || true)
-  if [ -z "$url" ]; then
-    [ -n "$optional" ] && return 0
-    die "release has no asset $name"
+  local dir=$1 name=$2 optional=${3:-} url="" repo
+  if [ -f "$dir/release.json" ]; then
+    url=$(grep -o '"browser_download_url"[[:space:]]*:[[:space:]]*"[^"]*/'"$name"'"' "$dir/release.json" |
+      sed 's/.*"\(http[^"]*\)"$/\1/' | head -n 1 || true)
   fi
-  curl -fsSL --proto '=https,http' -o "$dir/$name" "$url" || die "download failed: $url"
+  if [ -z "$url" ]; then
+    # No release.json (API blocked, or a mirror was used): the same file is
+    # served from the release path on github.com.
+    repo=$(head -n 1 "$dir/REPO" 2>/dev/null || true)
+    [ -n "$repo" ] || repo=${REPO:-$DEFAULT_REPO}
+    url="$(release_asset_base "$repo" "$dir")/$name"
+  fi
+  if fetch_url "$url" "$dir/$name"; then
+    return 0
+  fi
+  if [ -n "$optional" ]; then
+    rm -f -- "$dir/$name"
+    return 0
+  fi
+  warn "download failed: $url"
+  return 1
 }
 
 verify_signature() {
@@ -1335,7 +1552,7 @@ get_binary() {
   elif [ ! -f "$dir/$name" ]; then
     # Already extracted from paqet-release-*-linux-$ARCH.tar.xz when the
     # GitHub release ships archives instead of loose binaries.
-    download_asset "$dir" "$name"
+    download_asset "$dir" "$name" || die "cannot download $name (use --from DIR, or --mirror https://<prefix>)"
   fi
   (cd "$dir" && grep -E "^[0-9a-f]{64}[[:space:]]+\*?$name\$" SHA256SUMS | sha256sum -c --status -) ||
     die "checksum mismatch (or no SHA256SUMS entry) for $name"
@@ -3305,10 +3522,12 @@ run_uninstall() {
       --version) need_value "$@" && TAG=$2 && shift ;;
       --from) need_value "$@" && FROM_DIR=$2 && shift ;;
       --pubkey) need_value "$@" && PUBKEY=$2 && shift ;;
+      --mirror) need_value "$@" && MIRROR=$2 && shift ;;
       -h | --help)
         cat <<'USAGE'
 Usage: install.sh uninstall panel|node [--yes] [--purge] [--remove-tunnels]
                                        [--version TAG] [--repo OWNER/NAME] [--from DIR]
+                                       [--mirror URL]
 
 Downloads uninstall.sh from the release (latest unless --version), checks
 it against SHA256SUMS and runs it. Every step that stops or deletes
@@ -3340,6 +3559,7 @@ USAGE
     http://127.0.0.1* | http://localhost*) warn "using a plain-http release mirror on loopback" ;;
     *) die "--api must use https" ;;
   esac
+  validate_mirror
   if [ -n "$PUBKEY" ]; then
     [[ $PUBKEY =~ ^[A-Za-z0-9+/]{43}=$ ]] || die "--pubkey must be a base64 ed25519 key"
     command -v openssl >/dev/null || die "openssl (3.x) is required for --pubkey"
