@@ -176,9 +176,11 @@ jobs:
             echo "::error::the installer reported that the unit did not come up"
             exit 1
           fi
-          test -x /opt/paqet-panel/bin/paqet-panel
-          test -f /etc/paqet-panel/panel.yaml
-          echo "panel_repo: $(grep -E 'panel_repo:' /etc/paqet-panel/panel.yaml || echo '(none)')"
+          # /opt/paqet-panel/bin and panel.yaml are root-only, so these checks
+          # need root: a plain test -x fails silently for the runner user.
+          sudo test -x /opt/paqet-panel/bin/paqet-panel
+          sudo test -f /etc/paqet-panel/panel.yaml
+          echo "panel_repo: $(sudo grep -E 'panel_repo:' /etc/paqet-panel/panel.yaml || echo '(none)')"
 
           code=""
           for _ in $(seq 1 30); do
